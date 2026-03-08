@@ -12,6 +12,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCrashLog: () => ipcRenderer.invoke('app:getCrashLog'),
   getUserDataPath: () => ipcRenderer.invoke('app:getUserDataPath'),
 
+  // Audio capture (runs in hidden window, not in this renderer)
+  audio: {
+    startMicCapture: (callId, deviceId, settings) => ipcRenderer.invoke('audio:startMicCapture', callId, deviceId, settings),
+    stopMicCapture: () => ipcRenderer.invoke('audio:stopMicCapture'),
+    setMicMuted: (muted) => ipcRenderer.invoke('audio:setMicMuted', muted),
+    onMicStatus: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('audio:micStatus', handler);
+      return () => ipcRenderer.removeListener('audio:micStatus', handler);
+    },
+    onMicUnavailable: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('audio:micUnavailable', handler);
+      return () => ipcRenderer.removeListener('audio:micUnavailable', handler);
+    }
+  },
+
   // SIP operations (legacy single-line compatible + multi-line)
   sip: {
     register: (config) => ipcRenderer.invoke('sip:register', config),

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head><title>Audio Capture (Hidden)</title></head>
+<body>
+<script>
+/**
+ * This runs in a HIDDEN BrowserWindow, isolated from the main UI.
+ * Its only job: capture microphone audio via getUserMedia and send
+ * PCM Int16 samples to the main process via IPC.
+ * 
+ * If this renderer crashes (0xC0000005), the main UI stays alive.
+ * The main process will detect the crash and can retry.
+ */
+const { ipcRenderer } = require('electron');
+
+const SAMPLE_RATE = 8000;
+const BUFFER_SIZE = 4096; // ~512ms at 8kHz, ~2 callbacks/sec
+
+let audioContext = null;
+let micStream = null;
+let micProcessor = null;
+let isCapturing = false;
+let callId = null;
+
+// Listen for commands from main process
+ipcRenderer.on('audio:startCapture', async (event, data) => {
+  console.log('[AudioCapture] Start capture requested for callId:', data.callId);
+  callId = data.callId;
+  const deviceId = data.deviceId || 'default';
+  const settings = data.settings || {};
+  
+  if (isCapturing) {
+    console.log('[AudioCapture] Already capturing, stopping first...');
+    await stopCapture();
+  }
+  
+  try {
+    await startCapture(deviceId, settings);
+    ipcRenderer.send('audio:captureStarted', { callId, success: true });
+  } catch (err) {
+    console.error('[AudioCapture] Failed to start:', err.message);
+    ipcRenderer.send('audio:captureStarted', { callId, success: false, error: err.message });
+  }
+});
+
+ipcRenderer.on('audio:stopCapture', async () => {
+  console.log('[AudioCapture] Stop capture requested');
+  await stopCapture();
+  ipcRenderer.send('audio:captureStopped', { callId });
+});
+
+ipcRenderer.on('audio:setMuted', (event, muted) => {
+  console.log('[AudioCapture] Mute set to:', muted);
+  // We still capture but don't send when muted
+  ipcRenderer.muted = muted;
+});
+
+async function startCapture(deviceId, settings) {
+  const audioConstraints = {
+    echoCancellation: settings.echoCancellation !== false,
+    noiseSuppression: settings.noiseSuppression !== false,
+    autoGainControl: settings.autoGainControl !== false,
+    sampleRate: SAMPLE_RATE
+  };
+  
+  if (deviceId && deviceId !== 'default') {
+    audioConstraints.deviceId = { exact: deviceId };
+  }
+  
+  console.log('[AudioCapture] Requesting getUserMedia with constraints:', JSON.stringify(audioConstraints));
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+  console.log('[AudioCapture] getUserMedia succeeded, tracks:', micStream.getAudioTracks().length);
+  
+  audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+  console.log('[AudioCapture] AudioContext created, state:', audioContext.state, 'sampleRate:', audioContext.sampleRate);
+  
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+  
+  const micSource = audioContext.createMediaStreamSource(micStream);
+  micProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
+  
+  let callbackCount = 0;
+  let pendingSend = false;
+  
+  micProcessor.onaudioprocess = (e) => {
+    try {
+      if (ipcRenderer.muted || !isCapturing) return;
+      if (pendingSend) return; // Skip if previous send hasn't completed
+      
+      callbackCount++;
+      const inputData = e.inputBuffer.getChannelData(0);
+      const pcmSamples = new Int16Array(inputData.length);
+      for (let i = 0; i < inputData.length; i++) {
+        const s = Math.max(-1, Math.min(1, inputData[i]));
+        pcmSamples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      
+      if (callbackCount <= 3) {
+        console.log('[AudioCapture] Callback #' + callbackCount + ': ' + pcmSamples.length + ' samples');
+      }
+      
+      // Send PCM data to main process (which forwards to SIP engine)
+      pendingSend = true;
+      ipcRenderer.invoke('audio:micData', callId, Array.from(pcmSamples))
+        .then(() => { pendingSend = false; })
+        .catch((err) => { 
+          pendingSend = false;
+          if (callbackCount <= 5) console.warn('[AudioCapture] Send error:', err.message);
+        });
+    } catch (err) {
+      console.warn('[AudioCapture] Processing error:', err.message);
+    }
+  };
+  
+  micSource.connect(micProcessor);
+  // Connect to a silent destination to keep processor alive
+  const silentGain = audioContext.createGain();
+  silentGain.gain.value = 0;
+  silentGain.connect(audioContext.destination);
+  micProcessor.connect(silentGain);
+  
+  isCapturing = true;
+  console.log('[AudioCapture] Capture started successfully');
+}
+
+async function stopCapture() {
+  isCapturing = false;
+  
+  if (micProcessor) {
+    try { micProcessor.disconnect(); } catch(e) {}
+    micProcessor = null;
+  }
+  
+  if (micStream) {
+    try { micStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+    micStream = null;
+  }
+  
+  if (audioContext && audioContext.state !== 'closed') {
+    try { await audioContext.close(); } catch(e) {}
+    audioContext = null;
+  }
+  
+  console.log('[AudioCapture] Capture stopped');
+}
+
+// Signal ready
+console.log('[AudioCapture] Hidden audio capture window ready');
+ipcRenderer.send('audio:ready');
+</script>
+</body>
+</html>

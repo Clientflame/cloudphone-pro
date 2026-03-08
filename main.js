@@ -30,8 +30,61 @@ const autoLauncher = new AutoLaunch({
 });
 
 let mainWindow = null;
+let audioWindow = null; // Hidden window for mic capture (isolates getUserMedia crashes)
 let tray = null;
 const callRecorder = new CallRecorder();
+
+// ========== Hidden Audio Capture Window ==========
+// getUserMedia + ScriptProcessor crashes the renderer with 0xC0000005 on some Windows systems.
+// By running mic capture in a separate hidden BrowserWindow, we isolate the crash:
+// - If the audio window crashes, the main UI stays alive
+// - The call continues (SIP engine runs in main process)
+// - We can retry the audio window without losing the call
+function createAudioWindow() {
+  if (audioWindow && !audioWindow.isDestroyed()) {
+    return; // Already exists
+  }
+  audioWindow = new BrowserWindow({
+    show: false,
+    width: 1,
+    height: 1,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      sandbox: false,
+      backgroundThrottling: false
+    }
+  });
+  audioWindow.loadFile(path.join(__dirname, 'audio-capture.html'));
+  
+  audioWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[AudioWindow] Crashed:', details.reason, details.exitCode);
+    try {
+      const fs = require('fs');
+      const crashLogPath = path.join(app.getPath('userData'), 'crash.log');
+      const timestamp = new Date().toISOString();
+      fs.appendFileSync(crashLogPath, `[${timestamp}] AudioWindow crash: reason=${details.reason} exitCode=${details.exitCode} (0x${(details.exitCode >>> 0).toString(16).toUpperCase()})\n`);
+    } catch(e) {}
+    audioWindow = null;
+    // Notify main UI that mic is unavailable
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('audio:micUnavailable', { reason: 'Audio capture process crashed' });
+    }
+  });
+  
+  audioWindow.on('closed', () => {
+    audioWindow = null;
+  });
+  
+  console.log('[AudioWindow] Created hidden audio capture window');
+}
+
+function destroyAudioWindow() {
+  if (audioWindow && !audioWindow.isDestroyed()) {
+    audioWindow.close();
+    audioWindow = null;
+  }
+}
 
 // ========== Multi-Line SIP Engine Management ==========
 // Map of lineId -> { engine: SipEngine, config: {}, registered: bool }
@@ -1155,6 +1208,64 @@ ipcMain.handle('sip:setMute', (event, callId, muted) => {
 
 // ========== IPC Handlers: RTP Audio Bridge ==========
 
+// Mic data from the hidden audio capture window
+ipcMain.handle('audio:micData', (event, callId, pcmSamples) => {
+  const found = getSipEngineForCall(callId);
+  if (found) {
+    found.engine.feedMicData(callId, pcmSamples);
+  }
+  if (callRecorder.isRecording(callId)) {
+    callRecorder.feedMicData(callId, pcmSamples);
+  }
+  return true;
+});
+
+// Audio capture window signals
+ipcMain.on('audio:ready', () => {
+  console.log('[AudioWindow] Audio capture window is ready');
+});
+
+ipcMain.on('audio:captureStarted', (event, data) => {
+  console.log('[AudioWindow] Capture started:', data);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('audio:micStatus', { active: data.success, error: data.error });
+  }
+});
+
+ipcMain.on('audio:captureStopped', (event, data) => {
+  console.log('[AudioWindow] Capture stopped:', data);
+});
+
+// IPC from renderer to start/stop mic capture in hidden window
+ipcMain.handle('audio:startMicCapture', (event, callId, deviceId, settings) => {
+  console.log('[MAIN] Starting mic capture in hidden window for callId:', callId);
+  if (!audioWindow || audioWindow.isDestroyed()) {
+    createAudioWindow();
+    audioWindow.webContents.once('did-finish-load', () => {
+      audioWindow.webContents.send('audio:startCapture', { callId, deviceId, settings });
+    });
+  } else {
+    audioWindow.webContents.send('audio:startCapture', { callId, deviceId, settings });
+  }
+  return true;
+});
+
+ipcMain.handle('audio:stopMicCapture', () => {
+  console.log('[MAIN] Stopping mic capture in hidden window');
+  if (audioWindow && !audioWindow.isDestroyed()) {
+    audioWindow.webContents.send('audio:stopCapture');
+  }
+  return true;
+});
+
+ipcMain.handle('audio:setMicMuted', (event, muted) => {
+  if (audioWindow && !audioWindow.isDestroyed()) {
+    audioWindow.webContents.send('audio:setMuted', muted);
+  }
+  return true;
+});
+
+// Legacy mic data from renderer (kept for backward compat)
 ipcMain.handle('rtp:feedMic', (event, callId, pcmSamples) => {
   const found = getSipEngineForCall(callId);
   if (found) {

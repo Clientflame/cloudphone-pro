@@ -1058,143 +1058,95 @@
 
     async function startAudioCapture(callId) {
       console.log('[Audio] startAudioCapture called for callId:', callId);
-      // Guard against double-call (answerCall + callEstablished both trigger showActiveCall)
+      // Guard against double-call
       if (audioCaptureLock) {
-        console.log('[Audio] startAudioCapture already in progress, skipping duplicate call');
+        console.log('[Audio] startAudioCapture already in progress, skipping');
         return;
       }
-      // If audio is already running for this call, skip
       if (audioContext && audioContext.state === 'running' && rtpAudioCleanup) {
-        console.log('[Audio] Audio already running, skipping duplicate startAudioCapture');
+        console.log('[Audio] Audio already running, skipping');
         return;
       }
       audioCaptureLock = true;
       try {
-        // Clean up any previous speaker playback listener
+        // Clean up previous
         if (rtpAudioCleanup) {
           try { rtpAudioCleanup(); } catch(e) {}
           rtpAudioCleanup = null;
         }
-
-        // Close any existing AudioContext first to prevent resource leaks
         if (audioContext && audioContext.state !== 'closed') {
-          console.log('[Audio] Closing existing AudioContext (state:', audioContext.state, ')');
           try { await audioContext.close(); } catch(e) {}
           audioContext = null;
           speakerGainNode = null;
         }
+
+        // Create AudioContext for SPEAKER PLAYBACK ONLY
+        // NO getUserMedia in this renderer — mic runs in hidden window
         audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-        console.log('[Audio] AudioContext created, state:', audioContext.state, 'sampleRate:', audioContext.sampleRate);
-        // Resume AudioContext (required by Chrome autoplay policy)
+        console.log('[Audio] AudioContext created (speaker-only), state:', audioContext.state);
         if (audioContext.state === 'suspended') {
-          console.log('[Audio] Resuming suspended AudioContext...');
           await audioContext.resume();
-          console.log('[Audio] AudioContext resumed, state:', audioContext.state);
         }
 
-        // Create a persistent gain node for volume control
         speakerGainNode = audioContext.createGain();
         speakerGainNode.gain.value = (state.audioSettings.outputVolume || 80) / 100;
         speakerGainNode.connect(audioContext.destination);
-
-        // Reset playback cursor
         nextPlayTime = 0;
 
-        // IMPORTANT: Set up speaker playback FIRST — even if mic fails, we can still hear the remote party
+        // Set up speaker playback (receives audio from main process)
         setupSpeakerPlayback();
         showRtpStats(callId);
         console.log('[Audio] Speaker playback set up successfully');
 
-        // Now try to set up microphone capture (may fail if no mic permission)
-        // Defer mic setup slightly to let AudioContext stabilize first
-        setTimeout(() => {
-          setupMicCapture(callId).catch(err => {
-            console.warn('[Audio] Mic setup failed:', err.message);
-          });
-        }, 500);
+        // Start mic capture in HIDDEN WINDOW (isolated from this renderer)
+        // This prevents the 0xC0000005 crash from killing the UI
+        const deviceId = state.audioSettings?.inputDevice || 'default';
+        const settings = {
+          echoCancellation: state.audioSettings?.echoCancellation !== false,
+          noiseSuppression: state.audioSettings?.noiseSuppression !== false,
+          autoGainControl: state.audioSettings?.autoGainControl !== false
+        };
+        console.log('[Audio] Requesting mic capture via hidden window...');
+        if (window.electronAPI?.audio) {
+          window.electronAPI.audio.startMicCapture(callId, deviceId, settings)
+            .then(() => console.log('[Audio] Mic capture request sent to hidden window'))
+            .catch(err => console.warn('[Audio] Mic capture request failed:', err.message));
+          
+          // Listen for mic status updates
+          if (!window._micStatusCleanup) {
+            window._micStatusCleanup = window.electronAPI.audio.onMicStatus((status) => {
+              if (status.active) {
+                console.log('[Audio] Mic capture active in hidden window');
+              } else {
+                console.warn('[Audio] Mic capture failed:', status.error);
+                showToast('Microphone unavailable - you can hear but not speak', 'warning');
+              }
+            });
+          }
+          if (!window._micUnavailableCleanup) {
+            window._micUnavailableCleanup = window.electronAPI.audio.onMicUnavailable((data) => {
+              console.warn('[Audio] Mic became unavailable:', data.reason);
+              showToast('Microphone disconnected: ' + data.reason, 'warning');
+            });
+          }
+        }
 
-        // Set up output device routing via setSinkId
+        // Set up output device routing
         try {
           await routeOutputDevice();
         } catch(e) {
           console.warn('[Audio] Output device routing failed:', e.message);
         }
 
-        console.log('[Audio] Audio capture started for call', callId, '- AudioContext state:', audioContext.state);
+        console.log('[Audio] Audio started for call', callId);
       } catch (err) {
         console.error('[Audio] Failed to start audio engine:', err);
         showToast('Audio engine failed: ' + err.message, 'error');
-        // Even if everything fails, try to set up speaker playback as last resort
         try {
           if (!rtpAudioCleanup) setupSpeakerPlayback();
         } catch(e) {}
       } finally {
         audioCaptureLock = false;
-      }
-    }
-
-    async function setupMicCapture(callId) {
-      try {
-        if (!audioContext || audioContext.state === 'closed') {
-          console.warn('[Audio] Cannot setup mic - AudioContext not available');
-          return;
-        }
-        const audioConstraints = {
-          echoCancellation: state.audioSettings.echoCancellation !== false,
-          noiseSuppression: state.audioSettings.noiseSuppression !== false,
-          autoGainControl: state.audioSettings.autoGainControl !== false,
-          sampleRate: SAMPLE_RATE
-        };
-        if (state.audioSettings.inputDevice && state.audioSettings.inputDevice !== 'default') {
-          audioConstraints.deviceId = { exact: state.audioSettings.inputDevice };
-        }
-        console.log('[Audio] Requesting microphone access...');
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-        console.log('[Audio] Microphone access granted, tracks:', micStream.getAudioTracks().length);
-
-        // Use ScriptProcessor but with larger buffer to reduce callback frequency
-        // Buffer size 4096 at 8kHz = ~512ms per callback = ~2 calls/sec (much less IPC pressure)
-        const micSource = audioContext.createMediaStreamSource(micStream);
-        micProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-        let micCallbackCount = 0;
-        micProcessor.onaudioprocess = (e) => {
-          try {
-            if (state.muted || !state.activeCall) return;
-            if (micFeedPending) return;
-            micCallbackCount++;
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcmSamples = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-              const s = Math.max(-1, Math.min(1, inputData[i]));
-              pcmSamples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-            if (micCallbackCount <= 3) {
-              console.log('[Audio] Mic callback #' + micCallbackCount + ': ' + pcmSamples.length + ' samples');
-            }
-            if (window.electronAPI?.rtp) {
-              micFeedPending = true;
-              window.electronAPI.rtp.feedMic(callId, pcmSamples)
-                .then(() => { micFeedPending = false; })
-                .catch((err) => {
-                  micFeedPending = false;
-                  if (micCallbackCount <= 5) console.warn('[Audio] feedMic error:', err);
-                });
-            }
-          } catch (micErr) {
-            console.warn('[Audio] Mic processing error:', micErr.message);
-          }
-        };
-        micSource.connect(micProcessor);
-        // Connect to a silent destination to keep the processor alive
-        // but don't feed mic audio back to speakers (prevents echo)
-        const silentGain = audioContext.createGain();
-        silentGain.gain.value = 0;
-        silentGain.connect(audioContext.destination);
-        micProcessor.connect(silentGain);
-        console.log('[Audio] Mic capture started for call', callId, '(buffer: 4096)');
-      } catch (micErr) {
-        console.warn('[Audio] Microphone access failed (call will continue without mic):', micErr.message);
-        showToast('Microphone unavailable - you can hear but not speak', 'warning');
       }
     }
 
@@ -1349,6 +1301,14 @@
     }
 
     function stopAudioCapture() {
+      // Stop mic capture in hidden window
+      if (window.electronAPI?.audio) {
+        window.electronAPI.audio.stopMicCapture().catch(() => {});
+      }
+      // Clean up mic status listeners
+      if (window._micStatusCleanup) { window._micStatusCleanup(); window._micStatusCleanup = null; }
+      if (window._micUnavailableCleanup) { window._micUnavailableCleanup(); window._micUnavailableCleanup = null; }
+      // Clean up local speaker playback
       if (micProcessor) { try { micProcessor.disconnect(); } catch(e){} micProcessor = null; }
       if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
       if (speakerGainNode) { try { speakerGainNode.disconnect(); } catch(e){} speakerGainNode = null; }
@@ -2633,6 +2593,10 @@
       const btn = document.getElementById('btnMute');
       if (btn) btn.classList.toggle('active', state.muted);
       if (api && state.activeCall) api.sip.setMute(state.activeCall.callId, state.muted);
+      // Also mute in hidden audio window
+      if (window.electronAPI?.audio) {
+        window.electronAPI.audio.setMicMuted(state.muted).catch(() => {});
+      }
       showToast(state.muted ? 'Muted' : 'Unmuted', 'info');
     }
 
