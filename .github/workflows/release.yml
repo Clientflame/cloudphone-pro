@@ -1,0 +1,156 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to GitHub Releases'
+        required: true
+        default: 'true'
+        type: boolean
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  build-windows:
+    name: Build Windows Installer
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      installer_name: ${{ steps.version.outputs.installer_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Extract version
+        id: version
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "installer_name=CloudPhone Pro Setup $version.exe" >> $env:GITHUB_OUTPUT
+          Write-Host "Building version: $version"
+        shell: pwsh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & Publish to GitHub Releases (tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional code signing (set these secrets in your repo settings)
+          # CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Build & Publish (manual trigger)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build only (manual, no publish)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'false'
+        run: npm run dist
+
+      - name: Verify build output
+        run: |
+          if (Test-Path "dist/*.exe") {
+            $files = Get-ChildItem "dist/*.exe"
+            foreach ($f in $files) {
+              Write-Host "Built: $($f.Name) ($([math]::Round($f.Length / 1MB, 2)) MB)"
+            }
+          } else {
+            Write-Host "ERROR: No installer found"
+            exit 1
+          }
+          if (Test-Path "dist/latest.yml") {
+            Write-Host "latest.yml found (required for auto-update)"
+            Get-Content "dist/latest.yml"
+          } else {
+            Write-Host "WARNING: latest.yml not found - auto-update will not work"
+          }
+        shell: pwsh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-v${{ steps.version.outputs.version }}
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
+          retention-days: 90
+
+  create-release-notes:
+    name: Generate Release Notes
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [ -z "$PREV_TAG" ]; then
+            echo "changelog=Initial release" >> $GITHUB_OUTPUT
+          else
+            CHANGES=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges)
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo "$CHANGES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update release notes
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || format('v{0}', needs.build-windows.outputs.version) }}
+          name: CloudPhone Pro v${{ needs.build-windows.outputs.version }}
+          body: |
+            ## CloudPhone Pro v${{ needs.build-windows.outputs.version }}
+
+            ### Changes
+            ${{ steps.changelog.outputs.changelog }}
+
+            ### Installation
+            1. Download `CloudPhone Pro Setup ${{ needs.build-windows.outputs.version }}.exe` below
+            2. Run the installer (one-click, installs to Program Files)
+            3. Launch CloudPhone Pro from the desktop shortcut
+            4. Enter your SIP server credentials in Settings
+
+            ### Auto-Update
+            Existing installations with GitHub update configured will automatically detect and install this update.
+            
+            To enable auto-updates: **Settings > Updates** — enter your GitHub owner and repo name.
+
+            ### System Requirements
+            - Windows 10/11 (64-bit)
+            - Microphone and speakers/headset
+            - Network access to your SIP server
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease == 'true' || false }}

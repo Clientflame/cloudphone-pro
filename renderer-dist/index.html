@@ -1,0 +1,3275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudPhone Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+      --bg: #0a0a1a;
+      --bg-secondary: #0f0f24;
+      --fg: #e8e6f0;
+      --fg-dim: #b8b5c8;
+      --muted: #6b6890;
+      --border: rgba(100, 90, 160, 0.2);
+      --glass: rgba(20, 18, 40, 0.6);
+      --glass-hover: rgba(30, 28, 55, 0.8);
+      --glass-border: rgba(100, 90, 160, 0.15);
+      --primary: #7c5ce0;
+      --primary-light: #9d85f0;
+      --primary-dark: #5b3db8;
+      --success: #34d399;
+      --success-dim: rgba(52,211,153,0.15);
+      --danger: #ef4444;
+      --danger-dim: rgba(239,68,68,0.15);
+      --warning: #f59e0b;
+      --warning-dim: rgba(245,158,11,0.15);
+      --info: #3b82f6;
+      --info-dim: rgba(59,130,246,0.15);
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-xs: 6px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--fg);
+      overflow: hidden;
+      height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    /* ===== TITLEBAR ===== */
+    .titlebar {
+      height: 36px;
+      background: rgba(10, 10, 26, 0.95);
+      -webkit-app-region: drag;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+    }
+    .titlebar-logo { width: 18px; height: 18px; border-radius: 4px; margin-right: 8px; }
+    .titlebar-title { font-size: 12px; font-weight: 500; color: var(--muted); flex: 1; }
+    .titlebar-buttons { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+    .titlebar-btn {
+      width: 36px; height: 28px; border: none; background: transparent;
+      color: var(--muted); cursor: pointer; display: flex; align-items: center;
+      justify-content: center; border-radius: 4px; transition: var(--transition);
+    }
+    .titlebar-btn:hover { background: rgba(255,255,255,0.08); color: var(--fg); }
+    .titlebar-btn.close:hover { background: var(--danger); color: white; }
+
+    /* ===== LAYOUT ===== */
+    .app-layout {
+      display: flex;
+      height: calc(100vh - 36px);
+      margin-top: 36px;
+    }
+
+    /* ===== SIDEBAR ===== */
+    .sidebar {
+      width: 64px;
+      background: rgba(10, 10, 26, 0.8);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 0;
+      gap: 4px;
+      backdrop-filter: blur(20px);
+    }
+    .nav-btn {
+      width: 44px; height: 44px; border-radius: 10px; border: none;
+      background: transparent; color: var(--muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: var(--transition); position: relative;
+    }
+    .nav-btn:hover { background: var(--glass); color: var(--fg); }
+    .nav-btn.active {
+      background: rgba(124, 92, 224, 0.15);
+      color: var(--primary-light);
+    }
+    .nav-btn.active::before {
+      content: '';
+      position: absolute;
+      left: -10px;
+      width: 3px;
+      height: 20px;
+      background: var(--primary);
+      border-radius: 0 3px 3px 0;
+    }
+    .nav-badge {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--danger);
+      color: white;
+      font-size: 9px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid var(--bg);
+    }
+    .nav-spacer { flex: 1; }
+
+    .main-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+    .main-content::-webkit-scrollbar { width: 6px; }
+    .main-content::-webkit-scrollbar-track { background: transparent; }
+    .main-content::-webkit-scrollbar-thumb { background: rgba(100,90,160,0.3); border-radius: 3px; }
+
+    /* ===== GLASS PANELS ===== */
+    .glass-panel {
+      background: var(--glass);
+      backdrop-filter: blur(20px) saturate(1.5);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    /* ===== PAGE TITLE ===== */
+    .page-title {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .page-title i { color: var(--primary-light); }
+    .page-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+    /* ===== STATUS BAR ===== */
+    .statusbar {
+      height: 28px;
+      background: rgba(10, 10, 26, 0.9);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 16px;
+      font-size: 11px;
+      color: var(--muted);
+      position: fixed;
+      bottom: 0;
+      left: 64px;
+      right: 0;
+      z-index: 50;
+    }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      display: inline-block; margin-right: 4px;
+    }
+    .status-dot.green { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .status-dot.red { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+    .status-dot.yellow { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+
+    /* ===== DIALPAD ===== */
+    .dialpad-container {
+      display: flex; flex-direction: column; align-items: center;
+      max-width: 360px; margin: 0 auto;
+    }
+    .dial-display { width: 100%; text-align: center; margin-bottom: 24px; }
+    .dial-number {
+      font-size: 32px; font-weight: 300; font-family: var(--mono);
+      letter-spacing: 2px; min-height: 48px; color: var(--fg);
+    }
+    .dial-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .dialpad-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 12px; width: 100%; margin-bottom: 24px;
+    }
+    .dial-key {
+      width: 80px; height: 80px; border-radius: 50%;
+      border: 1px solid var(--glass-border); background: var(--glass);
+      color: var(--fg); font-size: 24px; font-weight: 500;
+      cursor: pointer; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: var(--transition); margin: 0 auto;
+      backdrop-filter: blur(10px);
+    }
+    .dial-key:hover {
+      background: var(--glass-hover);
+      border-color: rgba(124, 92, 224, 0.3);
+      transform: scale(1.05);
+    }
+    .dial-key:active {
+      transform: scale(0.95);
+      background: rgba(124, 92, 224, 0.2);
+      box-shadow: 0 0 20px rgba(124, 92, 224, 0.3);
+    }
+    .dial-key-sub { font-size: 9px; color: var(--muted); letter-spacing: 2px; margin-top: 2px; }
+    .dial-actions { display: flex; gap: 20px; align-items: center; }
+    .call-btn {
+      width: 64px; height: 64px; border-radius: 50%; border: none;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: var(--transition);
+    }
+    .call-btn.green {
+      background: var(--success); color: white;
+      box-shadow: 0 0 20px rgba(52, 211, 153, 0.4), 0 0 60px rgba(52, 211, 153, 0.15);
+    }
+    .call-btn.green:hover { transform: scale(1.1); box-shadow: 0 0 30px rgba(52, 211, 153, 0.5); }
+    .call-btn.red { background: var(--danger); color: white; box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); }
+    .call-btn.red:hover { transform: scale(1.1); }
+    .call-btn.small {
+      width: 48px; height: 48px; background: var(--glass);
+      color: var(--muted); border: 1px solid var(--glass-border);
+    }
+    .call-btn.small:hover { color: var(--fg); background: var(--glass-hover); }
+
+    /* ===== FORMS ===== */
+    .settings-section { margin-bottom: 24px; }
+    .settings-section h3 {
+      font-size: 16px; font-weight: 600; margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .form-group { margin-bottom: 12px; }
+    .form-label {
+      display: block; font-size: 12px; color: var(--muted);
+      margin-bottom: 4px; font-weight: 500;
+    }
+    .form-input {
+      width: 100%; padding: 10px 12px; background: var(--glass);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--fg); font-family: var(--font); font-size: 14px;
+      transition: border-color 0.2s; outline: none;
+    }
+    .form-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(124, 92, 224, 0.2);
+    }
+    .form-input::placeholder { color: rgba(150, 145, 180, 0.4); }
+    .form-select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239691b4' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+    }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-checkbox {
+      display: flex; align-items: center; gap: 8px; cursor: pointer;
+      font-size: 13px; color: var(--fg-dim);
+    }
+    .form-checkbox input[type="checkbox"] {
+      width: 16px; height: 16px; accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    /* ===== BUTTONS ===== */
+    .btn {
+      padding: 10px 20px; border-radius: var(--radius-sm); border: none;
+      font-family: var(--font); font-size: 14px; font-weight: 500;
+      cursor: pointer; transition: var(--transition);
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-light); transform: translateY(-1px); }
+    .btn-success { background: var(--success); color: white; }
+    .btn-success:hover { opacity: 0.9; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { opacity: 0.9; }
+    .btn-ghost { background: var(--glass); color: var(--fg); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--glass-hover); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn-xs { padding: 4px 8px; font-size: 11px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-icon {
+      width: 36px; height: 36px; padding: 0; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      background: var(--glass); border: 1px solid var(--border);
+      color: var(--fg); cursor: pointer; transition: var(--transition);
+    }
+    .btn-icon:hover { background: var(--glass-hover); }
+
+    /* ===== CONTACTS ===== */
+    .contact-list { display: flex; flex-direction: column; gap: 4px; }
+    .contact-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; border-radius: var(--radius-sm);
+      cursor: pointer; transition: background 0.15s;
+    }
+    .contact-item:hover { background: var(--glass); }
+    .contact-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 16px; color: white; flex-shrink: 0;
+    }
+    .contact-info { flex: 1; }
+    .contact-name { font-size: 14px; font-weight: 500; }
+    .contact-ext { font-size: 12px; color: var(--muted); }
+    .contact-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .contact-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+    .contact-item:hover .contact-actions { opacity: 1; }
+
+    /* ===== CALL HISTORY ===== */
+    .history-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; border-radius: var(--radius-sm);
+      transition: background 0.15s;
+    }
+    .history-item:hover { background: var(--glass); }
+    .history-icon {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .history-icon.incoming { background: var(--success-dim); color: var(--success); }
+    .history-icon.outgoing { background: rgba(124, 92, 224, 0.15); color: var(--primary-light); }
+    .history-icon.missed { background: var(--danger-dim); color: var(--danger); }
+    .history-info { flex: 1; }
+    .history-name { font-size: 14px; font-weight: 500; }
+    .history-detail { font-size: 12px; color: var(--muted); }
+    .history-time { font-size: 12px; color: var(--muted); text-align: right; }
+    .history-duration { font-size: 11px; color: var(--muted); }
+
+    /* ===== ACTIVE CALL OVERLAY ===== */
+    .call-overlay {
+      position: fixed; inset: 36px 0 0 64px;
+      background: linear-gradient(180deg, rgba(10,10,26,0.97), rgba(20,18,40,0.98));
+      z-index: 40; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 20px;
+      animation: fadeIn 0.3s ease;
+    }
+    .call-overlay.hidden { display: none; }
+    .call-avatar-large {
+      width: 100px; height: 100px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), #9d85f0);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 36px; font-weight: 600; color: white;
+      box-shadow: 0 0 40px rgba(124, 92, 224, 0.3);
+    }
+    .call-target-name { font-size: 28px; font-weight: 600; }
+    .call-status-text { font-size: 14px; color: var(--muted); }
+    .call-timer { font-size: 20px; font-family: var(--mono); color: var(--primary-light); }
+    .call-controls { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; justify-content: center; }
+    .call-ctrl-btn {
+      width: 56px; height: 56px; border-radius: 50%;
+      border: 1px solid var(--border); background: var(--glass);
+      color: var(--fg); cursor: pointer; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: var(--transition); gap: 2px;
+    }
+    .call-ctrl-btn:hover { background: var(--glass-hover); border-color: var(--primary); }
+    .call-ctrl-btn.active { background: rgba(124, 92, 224, 0.2); border-color: var(--primary); color: var(--primary-light); }
+    .call-ctrl-btn.recording-active { background: rgba(239,68,68,0.3) !important; border-color: #ef4444 !important; color: #ef4444 !important; }
+    .call-ctrl-label { font-size: 9px; color: var(--muted); }
+    .call-end-btn {
+      width: 64px; height: 64px; border-radius: 50%; border: none;
+      background: var(--danger); color: white; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+      transition: var(--transition);
+    }
+    .call-end-btn:hover { transform: scale(1.1); }
+
+    /* Waveform */
+    .waveform { display: flex; align-items: center; gap: 3px; height: 40px; }
+    .wave-bar {
+      width: 3px; background: var(--primary-light); border-radius: 2px;
+      animation: waveform 0.8s ease-in-out infinite; opacity: 0.6;
+    }
+
+    /* ===== INCOMING CALL OVERLAY ===== */
+    .incoming-overlay {
+      position: fixed; inset: 36px 0 0 64px;
+      background: rgba(10, 10, 26, 0.95);
+      z-index: 45; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 20px;
+      animation: fadeIn 0.3s ease;
+    }
+    .incoming-overlay.hidden { display: none; }
+    .incoming-ring {
+      width: 120px; height: 120px; border-radius: 50%;
+      position: relative; display: flex; align-items: center; justify-content: center;
+    }
+    .incoming-ring::before, .incoming-ring::after {
+      content: ''; position: absolute; inset: -10px; border-radius: 50%;
+      border: 2px solid var(--success);
+      animation: pulse-ring 1.5s ease-in-out infinite;
+    }
+    .incoming-ring::after { inset: -25px; animation-delay: 0.5s; }
+    .incoming-actions { display: flex; gap: 40px; margin-top: 20px; }
+    .incoming-btn {
+      width: 64px; height: 64px; border-radius: 50%; border: none;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: var(--transition);
+    }
+    .incoming-btn.answer {
+      background: var(--success); color: white;
+      box-shadow: 0 0 20px rgba(52, 211, 153, 0.4);
+      animation: breathing-glow 2s ease-in-out infinite;
+    }
+    .incoming-btn.decline {
+      background: var(--danger); color: white;
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+    }
+    .incoming-btn:hover { transform: scale(1.1); }
+
+    /* ===== TRANSFER MODAL ===== */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      z-index: 60; display: flex; align-items: center; justify-content: center;
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-overlay.hidden { display: none; }
+    .modal {
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px; min-width: 400px;
+      max-width: 500px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      animation: slideUp 0.3s ease;
+    }
+    .modal-title {
+      font-size: 18px; font-weight: 600; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .modal-close {
+      margin-left: auto; background: none; border: none; color: var(--muted);
+      cursor: pointer; padding: 4px; font-size: 18px; line-height: 1;
+    }
+    .modal-close:hover { color: var(--fg); }
+    .modal-body { margin-bottom: 20px; }
+    .modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* ===== TOAST ===== */
+    .toast-container {
+      position: fixed; top: 48px; right: 16px; z-index: 200;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .toast {
+      padding: 12px 16px; border-radius: var(--radius-sm);
+      background: var(--glass); backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); font-size: 13px;
+      animation: slideInRight 0.3s ease, fadeOut 0.3s ease 3.7s forwards;
+      max-width: 360px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .toast.success { border-left: 3px solid var(--success); }
+    .toast.error { border-left: 3px solid var(--danger); }
+    .toast.info { border-left: 3px solid var(--primary); }
+    .toast.warning { border-left: 3px solid var(--warning); }
+
+    /* ===== DIAGNOSTICS / QOS ===== */
+    .diag-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;
+    }
+    .diag-card {
+      padding: 16px; border-radius: 10px; background: var(--glass);
+      border: 1px solid var(--border);
+    }
+    .diag-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .diag-value { font-size: 20px; font-weight: 600; margin-top: 4px; }
+    .diag-value.green { color: var(--success); }
+    .diag-value.red { color: var(--danger); }
+    .diag-value.yellow { color: var(--warning); }
+
+    /* ===== TABS ===== */
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+    .tab {
+      padding: 8px 16px; border-radius: var(--radius-sm); border: none;
+      background: transparent; color: var(--muted); font-family: var(--font);
+      font-size: 13px; cursor: pointer; transition: var(--transition);
+    }
+    .tab:hover { background: var(--glass); color: var(--fg); }
+    .tab.active { background: rgba(124, 92, 224, 0.15); color: var(--primary-light); }
+
+    /* ===== SEARCH ===== */
+    .search-box { position: relative; margin-bottom: 16px; }
+    .search-box i {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      color: var(--muted); width: 16px; height: 16px;
+    }
+    .search-input {
+      width: 100%; padding: 10px 12px 10px 36px; background: var(--glass);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--fg); font-family: var(--font); font-size: 14px; outline: none;
+    }
+    .search-input:focus { border-color: var(--primary); }
+
+    /* ===== FEATURE CODES ===== */
+    .feature-codes {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px;
+    }
+    .feature-code-btn {
+      padding: 8px 12px; border-radius: var(--radius-sm); background: var(--glass);
+      border: 1px solid var(--border); color: var(--fg); font-family: var(--font);
+      font-size: 12px; cursor: pointer; text-align: left; transition: var(--transition);
+    }
+    .feature-code-btn:hover { background: var(--glass-hover); border-color: var(--primary); }
+    .feature-code-btn .code { font-family: var(--mono); color: var(--primary-light); font-size: 13px; }
+    .feature-code-btn .desc { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+    /* ===== SPEED DIAL ===== */
+    .speed-dial-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px;
+    }
+    .speed-dial-card {
+      padding: 16px; border-radius: var(--radius); background: var(--glass);
+      border: 1px solid var(--border); text-align: center; cursor: pointer;
+      transition: var(--transition);
+    }
+    .speed-dial-card:hover { background: var(--glass-hover); border-color: var(--primary); transform: translateY(-2px); }
+
+    /* ===== CONNECTION ARCHITECTURE ===== */
+    .arch-diagram {
+      display: flex; align-items: center; justify-content: center;
+      gap: 16px; padding: 24px; flex-wrap: wrap;
+    }
+    .arch-box {
+      padding: 12px 20px; border-radius: 10px; text-align: center;
+      font-size: 13px; font-weight: 500;
+    }
+    .arch-box.local {
+      background: rgba(124, 92, 224, 0.15);
+      border: 1px solid rgba(124, 92, 224, 0.3);
+      color: var(--primary-light);
+    }
+    .arch-box.remote {
+      background: var(--success-dim);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      color: var(--success);
+    }
+    .arch-arrow { color: var(--muted); font-size: 20px; }
+    .arch-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+    /* ===== UPDATE BANNER ===== */
+    .update-banner {
+      position: fixed; top: 36px; left: 0; right: 0; z-index: 99;
+      padding: 8px 16px; display: flex; align-items: center; gap: 12px;
+      font-size: 13px; transition: all 0.3s ease;
+      transform: translateY(-100%); opacity: 0;
+    }
+    .update-banner.visible { transform: translateY(0); opacity: 1; }
+    .update-banner.checking { background: rgba(124, 92, 224, 0.15); border-bottom: 1px solid rgba(124, 92, 224, 0.3); color: var(--primary-light); }
+    .update-banner.available { background: var(--warning-dim); border-bottom: 1px solid rgba(245, 158, 11, 0.3); color: var(--warning); }
+    .update-banner.downloading { background: var(--info-dim); border-bottom: 1px solid rgba(59, 130, 246, 0.3); color: #60a5fa; }
+    .update-banner.ready { background: var(--success-dim); border-bottom: 1px solid rgba(52, 211, 153, 0.3); color: var(--success); }
+    .update-banner.error { background: var(--danger-dim); border-bottom: 1px solid rgba(239, 68, 68, 0.2); color: var(--danger); }
+    .update-banner .update-text { flex: 1; }
+    .update-banner .update-version { font-family: var(--mono); font-weight: 500; }
+    .update-progress { width: 120px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+    .update-progress-bar { height: 100%; background: #60a5fa; border-radius: 2px; transition: width 0.3s ease; }
+    .update-btn {
+      padding: 4px 12px; border-radius: var(--radius-xs); border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.1); color: inherit; font-size: 12px;
+      font-family: var(--font); cursor: pointer; transition: background 0.2s;
+    }
+    .update-btn:hover { background: rgba(255,255,255,0.2); }
+    .update-dismiss {
+      background: none; border: none; color: inherit; cursor: pointer;
+      opacity: 0.6; padding: 4px; font-size: 16px; line-height: 1;
+    }
+    .update-dismiss:hover { opacity: 1; }
+
+    /* ===== VERSION BADGE ===== */
+    .version-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: var(--radius-xs);
+      background: rgba(124, 92, 224, 0.15);
+      border: 1px solid rgba(124, 92, 224, 0.2);
+      font-family: var(--mono); font-size: 12px; color: var(--primary-light);
+    }
+
+    /* ===== KEYBOARD SHORTCUTS PANEL ===== */
+    .shortcut-list { display: flex; flex-direction: column; gap: 8px; }
+    .shortcut-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px; border-radius: var(--radius-sm);
+      background: var(--glass); border: 1px solid var(--border);
+    }
+    .shortcut-keys {
+      display: flex; gap: 4px;
+    }
+    .kbd {
+      padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border); font-family: var(--mono);
+      font-size: 11px; color: var(--fg-dim);
+    }
+
+    /* ===== EMPTY STATE ===== */
+    .empty-state {
+      text-align: center; padding: 60px 20px;
+    }
+    .empty-state i { color: var(--muted); margin-bottom: 16px; }
+    .empty-state p { color: var(--muted); font-size: 14px; }
+    .empty-state .hint { font-size: 12px; margin-top: 8px; }
+
+    /* ===== TOGGLE SWITCH ===== */
+    .toggle-switch {
+      position: relative; width: 44px; height: 24px; cursor: pointer;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0; background: var(--glass);
+      border: 1px solid var(--border); border-radius: 12px;
+      transition: var(--transition);
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute; width: 18px; height: 18px;
+      left: 2px; top: 2px; background: var(--muted);
+      border-radius: 50%; transition: var(--transition);
+    }
+    .toggle-switch input:checked + .toggle-slider {
+      background: rgba(124, 92, 224, 0.3); border-color: var(--primary);
+    }
+    .toggle-switch input:checked + .toggle-slider::before {
+      transform: translateX(20px); background: var(--primary-light);
+    }
+
+    /* ===== ANIMATIONS ===== */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    @keyframes pulse-ring {
+      0% { transform: scale(1); opacity: 0.6; }
+      50% { transform: scale(1.15); opacity: 0.3; }
+      100% { transform: scale(1); opacity: 0.6; }
+    }
+    @keyframes breathing-glow {
+      0%, 100% { box-shadow: 0 0 20px rgba(52, 211, 153, 0.3), 0 0 60px rgba(52, 211, 153, 0.1); }
+      50% { box-shadow: 0 0 30px rgba(52, 211, 153, 0.5), 0 0 80px rgba(52, 211, 153, 0.2); }
+    }
+    @keyframes waveform {
+      0%, 100% { height: 4px; }
+      50% { height: var(--wave-height, 20px); }
+    }
+    @keyframes recording-pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+      50% { opacity: 0.7; box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <!-- Title Bar -->
+  <div class="titlebar">
+    <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/b9oNZe9Uz8wstVwBcqeQd4/logo-icon-8ZdKuSMsECJAgDanMWsGj2.webp" class="titlebar-logo" alt="logo">
+    <span class="titlebar-title">CloudPhone Pro</span>
+    <div class="titlebar-buttons">
+      <button class="titlebar-btn" onclick="electronAPI?.minimize()"><i data-lucide="minus" style="width:14px;height:14px"></i></button>
+      <button class="titlebar-btn" onclick="electronAPI?.maximize()"><i data-lucide="square" style="width:12px;height:12px"></i></button>
+      <button class="titlebar-btn close" onclick="electronAPI?.close()"><i data-lucide="x" style="width:14px;height:14px"></i></button>
+    </div>
+  </div>
+
+  <!-- Auto-Update Banner -->
+  <div id="updateBanner" class="update-banner">
+    <span class="update-text" id="updateText"></span>
+    <div class="update-progress" id="updateProgress" style="display:none">
+      <div class="update-progress-bar" id="updateProgressBar" style="width:0%"></div>
+    </div>
+    <button class="update-btn" id="updateAction" style="display:none"></button>
+    <button class="update-dismiss" id="updateDismiss" onclick="dismissUpdate()">&times;</button>
+  </div>
+
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <button class="nav-btn active" data-page="dialpad" title="Dialpad (D)"><i data-lucide="grid-3x3" style="width:20px;height:20px"></i></button>
+      <button class="nav-btn" data-page="contacts" title="Contacts (C)"><i data-lucide="users" style="width:20px;height:20px"></i></button>
+      <button class="nav-btn" data-page="history" title="Call History (H)"><i data-lucide="clock" style="width:20px;height:20px"></i></button>
+      <button class="nav-btn" data-page="voicemail" title="Voicemail (V)"><i data-lucide="voicemail" style="width:20px;height:20px"></i></button>
+      <button class="nav-btn" data-page="codes" title="Feature Codes"><i data-lucide="hash" style="width:20px;height:20px"></i></button>
+      <button class="nav-btn" data-page="recordings" title="Recordings (R)"><i data-lucide="disc" style="width:20px;height:20px"></i></button>
+      <button class="nav-btn" data-page="qos" title="QoS Monitor (Q)"><i data-lucide="activity" style="width:20px;height:20px"></i></button>
+      <button class="nav-btn" data-page="queue" title="Queue Agent (A)"><i data-lucide="headset" style="width:20px;height:20px"></i></button>
+      <div class="nav-spacer"></div>
+      <button class="nav-btn" data-page="shortcuts" title="Keyboard Shortcuts (?)"><i data-lucide="keyboard" style="width:20px;height:20px"></i></button>
+      <button class="nav-btn" data-page="settings" title="Settings (S)"><i data-lucide="settings" style="width:20px;height:20px"></i></button>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content" id="mainContent" style="padding-bottom: 40px;">
+    </div>
+  </div>
+
+  <!-- Status Bar -->
+  <div class="statusbar" id="statusBar">
+    <span><span class="status-dot red" id="statusDot"></span> <span id="statusText">Disconnected</span></span>
+    <span id="statusTransport">Transport: —</span>
+    <span id="statusCodec">Codec: —</span>
+    <span id="statusLatency">Latency: —</span>
+    <span id="statusEncryption" style="display:none"><i data-lucide="lock" style="width:10px;height:10px;display:inline"></i> SRTP</span>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:8px;"><span id="statusServer">No server configured</span><button onclick="toggleDebugConsole()" style="background:none;border:1px solid #30363d;color:#8b949e;padding:1px 6px;border-radius:3px;cursor:pointer;font-size:10px;font-family:'JetBrains Mono',monospace;" title="Toggle SIP Debug Console">DBG</button></span>
+  </div>
+
+  <!-- Active Call Overlay -->
+  <div class="call-overlay hidden" id="callOverlay">
+    <div class="call-avatar-large" id="callAvatar">?</div>
+    <div class="call-target-name" id="callTargetName">Unknown</div>
+    <div class="call-status-text" id="callStatusText">Connecting...</div>
+    <div class="call-timer" id="callTimer" style="display:none">00:00</div>
+    <div class="waveform" id="callWaveform" style="display:none"></div>
+    <div id="recordingIndicator" style="display:none;font-size:11px;color:#ef4444;font-weight:600;text-align:center;margin-top:4px;animation:pulse 1.5s ease-in-out infinite">
+      <span style="display:inline-block;width:8px;height:8px;background:#ef4444;border-radius:50%;margin-right:6px;vertical-align:middle;animation:recording-pulse 1.5s ease-in-out infinite"></span>REC <span id="recordingDuration">00:00</span>
+    </div>
+    <div id="rtpStats" style="display:none;font-size:11px;color:var(--muted);font-family:var(--mono);text-align:center;margin-top:8px;padding:6px 12px;background:rgba(0,0,0,0.3);border-radius:8px;">
+      <span id="rtpCodec">PCMU</span> | <span id="rtpPackets">0/0 pkts</span> | <span id="rtpLost">0 lost</span> | <span id="rtpJitter">0ms jitter</span>
+    </div>
+    <!-- In-call DTMF pad (hidden by default) -->
+    <div id="inCallDtmfPad" style="display:none;margin-top:8px">
+      <div style="display:grid;grid-template-columns:repeat(3,48px);gap:6px;justify-content:center">
+      </div>
+    </div>
+    <div class="call-controls">
+      <button class="call-ctrl-btn" id="btnMute" onclick="toggleMute()"><i data-lucide="mic" style="width:20px;height:20px"></i><span class="call-ctrl-label">Mute</span></button>
+      <button class="call-ctrl-btn" id="btnHold" onclick="toggleHold()"><i data-lucide="pause" style="width:20px;height:20px"></i><span class="call-ctrl-label">Hold</span></button>
+      <button class="call-ctrl-btn" id="btnRecord" onclick="toggleRecording()"><i data-lucide="circle" style="width:20px;height:20px"></i><span class="call-ctrl-label">Record</span></button>
+      <button class="call-ctrl-btn" id="btnDtmf" onclick="toggleInCallDtmf()"><i data-lucide="grid-3x3" style="width:20px;height:20px"></i><span class="call-ctrl-label">DTMF</span></button>
+      <button class="call-ctrl-btn" onclick="showTransferModal()"><i data-lucide="phone-forwarded" style="width:20px;height:20px"></i><span class="call-ctrl-label">Transfer</span></button>
+      <button class="call-ctrl-btn" onclick="showConferenceModal()"><i data-lucide="users" style="width:20px;height:20px"></i><span class="call-ctrl-label">Conf</span></button>
+      <button class="call-ctrl-btn" onclick="parkCall()"><i data-lucide="square-parking" style="width:20px;height:20px"></i><span class="call-ctrl-label">Park</span></button>
+      <button class="call-end-btn" onclick="endCall()"><i data-lucide="phone-off" style="width:22px;height:22px"></i></button>
+    </div>
+  </div>
+
+  <!-- Incoming Call Overlay -->
+  <div class="incoming-overlay hidden" id="incomingOverlay">
+    <div class="incoming-ring">
+      <div class="call-avatar-large" id="incomingAvatar">?</div>
+    </div>
+    <div class="call-target-name" id="incomingName">Incoming Call</div>
+    <div class="call-status-text">Incoming Call</div>
+    <div class="incoming-actions">
+      <button class="incoming-btn decline" onclick="declineCall()"><i data-lucide="phone-off" style="width:24px;height:24px"></i></button>
+      <button class="incoming-btn answer" onclick="answerCall()"><i data-lucide="phone" style="width:24px;height:24px"></i></button>
+    </div>
+  </div>
+
+  <!-- Transfer Modal -->
+  <div class="modal-overlay hidden" id="transferModal">
+    <div class="modal">
+      <div class="modal-title">
+        <i data-lucide="phone-forwarded" style="width:20px;height:20px;color:var(--primary-light)"></i>
+        Transfer Call
+        <button class="modal-close" onclick="closeTransferModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tabs" style="margin-bottom:12px">
+          <button class="tab active" onclick="setTransferType('blind')">Blind Transfer</button>
+          <button class="tab" onclick="setTransferType('attended')">Attended Transfer</button>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Transfer to Extension</label>
+          <input class="form-input" id="transferTarget" placeholder="Enter extension or number" autofocus>
+        </div>
+        <div id="transferContactsList" style="max-height:200px;overflow-y:auto;margin-top:12px">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeTransferModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="executeTransfer()"><i data-lucide="phone-forwarded" style="width:14px;height:14px"></i> Transfer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conference Modal -->
+  <div class="modal-overlay hidden" id="conferenceModal">
+    <div class="modal">
+      <div class="modal-title">
+        <i data-lucide="users" style="width:20px;height:20px;color:var(--primary-light)"></i>
+        Conference Call
+        <button class="modal-close" onclick="closeConferenceModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Add Party to Conference</label>
+          <input class="form-input" id="conferenceTarget" placeholder="Enter extension or number">
+        </div>
+        <div id="conferenceParties" style="margin-top:12px"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeConferenceModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="addToConference()"><i data-lucide="user-plus" style="width:14px;height:14px"></i> Add Party</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Contact Modal -->
+  <div class="modal-overlay hidden" id="contactModal">
+    <div class="modal">
+      <div class="modal-title">
+        <i data-lucide="user-plus" style="width:20px;height:20px;color:var(--primary-light)"></i>
+        <span id="contactModalTitle">Add Contact</span>
+        <button class="modal-close" onclick="closeContactModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="contactName" placeholder="Full name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Extension / Number</label>
+          <input class="form-input" id="contactExt" placeholder="e.g. 107">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Company</label>
+          <input class="form-input" id="contactCompany" placeholder="Company name (optional)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input class="form-input" id="contactEmail" placeholder="email@example.com (optional)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <input class="form-input" id="contactNotes" placeholder="Notes (optional)">
+        </div>
+        <div class="form-group">
+          <label class="form-checkbox">
+            <input type="checkbox" id="contactSpeedDial"> Add to Speed Dial
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeContactModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveContactFromModal()"><i data-lucide="save" style="width:14px;height:14px"></i> Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIP Debug Console -->
+  <div id="sipDebugConsole" style="display:none;position:fixed;bottom:28px;left:0;right:0;height:200px;background:#0d1117;border-top:2px solid #7c3aed;z-index:9998;font-family:'JetBrains Mono','Fira Code',monospace;font-size:11px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 12px;background:#161b22;border-bottom:1px solid #21262d;">
+      <span style="color:#7c3aed;font-weight:600;font-size:12px;"><i data-lucide="terminal" style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:4px;"></i> SIP Debug Console</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span id="debugMsgCount" style="color:#8b949e;font-size:10px;">0 messages</span>
+        <button onclick="clearDebugConsole()" style="background:none;border:1px solid #30363d;color:#8b949e;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit;" title="Clear">Clear</button>
+        <button onclick="toggleDebugConsole()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px;padding:0 4px;" title="Close">&times;</button>
+      </div>
+    </div>
+    <div id="debugLogArea" style="height:calc(100% - 28px);overflow-y:auto;padding:4px 12px;color:#c9d1d9;line-height:1.6;"></div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    // ==================== GLOBAL ERROR HANDLERS ====================
+    // Prevent uncaught errors from crashing the renderer and causing blank screen
+    window.onerror = function(message, source, lineno, colno, error) {
+      console.error('[RENDERER ERROR]', message, 'at', source, lineno, colno, error);
+      // Show error in a non-intrusive way instead of crashing
+      try {
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:80px;right:20px;background:#ef4444;color:white;padding:8px 16px;border-radius:8px;z-index:99999;font-size:12px;max-width:400px;word-break:break-word;';
+        toast.textContent = 'Error: ' + (message || 'Unknown error');
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 8000);
+      } catch(e) {}
+      return true; // Prevent default error handling (which could blank the page)
+    };
+
+    window.addEventListener('unhandledrejection', function(event) {
+      console.error('[RENDERER UNHANDLED REJECTION]', event.reason);
+      event.preventDefault(); // Prevent the rejection from propagating
+      try {
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:80px;right:20px;background:#f59e0b;color:white;padding:8px 16px;border-radius:8px;z-index:99999;font-size:12px;max-width:400px;word-break:break-word;';
+        toast.textContent = 'Async Error: ' + (event.reason?.message || event.reason || 'Unknown');
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 8000);
+      } catch(e) {}
+    });
+
+    // ==================== STATE ====================
+    const state = {
+      currentPage: 'dialpad',
+      dialNumber: '',
+      sipConfig: { server: '', port: '5060', transport: 'UDP', username: '', password: '', displayName: '' },
+      registered: false,
+      activeCall: null,
+      incomingCall: null,
+      callTimer: null,
+      callSeconds: 0,
+      muted: false,
+      held: false,
+      recording: false,
+      recordAllCalls: false,
+      recordingStartTime: 0,
+      recordingTimer: null,
+      transferType: 'blind',
+      showInCallDtmf: false,
+      audioSettings: {
+        inputDevice: 'default', outputDevice: 'default', ringtoneDevice: 'default',
+        inputVolume: 80, outputVolume: 80, ringtoneVolume: 70,
+        echoCancellation: true, noiseSuppression: true, autoGainControl: true
+      },
+      audioDevices: { inputs: [], outputs: [] },
+      recordingsList: [],
+      contacts: [],
+      callHistory: [],
+      featureCodes: [
+        { code: '*97', desc: 'Check Voicemail' }, { code: '*98', desc: 'Voicemail Login' },
+        { code: '*72', desc: 'Call Forward Enable' }, { code: '*73', desc: 'Call Forward Disable' },
+        { code: '*74', desc: 'Call Forward Busy' }, { code: '*78', desc: 'DND Enable' },
+        { code: '*79', desc: 'DND Disable' }, { code: '*80', desc: 'Intercom Prefix' },
+        { code: '##', desc: 'Attended Transfer' }, { code: '*1', desc: 'Blind Transfer' },
+        { code: '*43', desc: 'Call Waiting Toggle' }, { code: '*60', desc: 'Blacklist Number' },
+        { code: '*69', desc: 'Call Return' }, { code: '*70', desc: 'CW Deactivate' },
+        { code: '*82', desc: 'CID Unblock' }, { code: '*67', desc: 'CID Block' },
+        { code: '*70', desc: 'Park Call' }, { code: '*71', desc: 'Pickup Parked' }
+      ],
+      appSettings: {
+        startMinimized: false, minimizeToTray: true, autoAnswer: false,
+        autoAnswerDelay: 3, dndMode: false, compactMode: false,
+        showNotifications: true, dtmfVolume: 50, ringtoneVolume: 70
+      },
+      qosHistory: [],
+      editingContactId: null,
+      // Multi-line state
+      lines: [],
+      activeLineId: null,
+      // Queue agent state
+      queueState: { agentStatus: 'logged_out', queues: [], loginTime: null, callsHandled: 0, totalTalkTime: 0, agentPauseReason: '' },
+      queueSettings: { queues: [], autoLogin: false },
+      // Notification settings
+      nativeNotifications: true,
+      // Protocol handler
+      protocolStatus: { tel: false, sip: false, callto: false },
+      // App window settings
+      launchOnStartup: false,
+      alwaysOnTop: false,
+      // App version (loaded from Electron)
+      appVersion: '2.5.0',
+      // GitHub update configuration
+      ghUpdateConfig: { owner: '', repo: '', token: '', hasToken: false, autoCheck: true, channel: 'stable' }
+    };
+
+    // ==================== DTMF TONE GENERATOR ====================
+    const DTMF_FREQS = {
+      '1': [697, 1209], '2': [697, 1336], '3': [697, 1477], 'A': [697, 1633],
+      '4': [770, 1209], '5': [770, 1336], '6': [770, 1477], 'B': [770, 1633],
+      '7': [852, 1209], '8': [852, 1336], '9': [852, 1477], 'C': [852, 1633],
+      '*': [941, 1209], '0': [941, 1336], '#': [941, 1477], 'D': [941, 1633]
+    };
+    let dtmfContext = null;
+
+    function playDtmfTone(digit) {
+      const freqs = DTMF_FREQS[digit];
+      if (!freqs) return;
+      try {
+        if (!dtmfContext || dtmfContext.state === 'closed') {
+          dtmfContext = new AudioContext();
+        }
+        const vol = (state.appSettings.dtmfVolume || 50) / 100;
+        const duration = 0.15;
+        const now = dtmfContext.currentTime;
+        const gain = dtmfContext.createGain();
+        gain.gain.setValueAtTime(vol * 0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        gain.connect(dtmfContext.destination);
+
+        const osc1 = dtmfContext.createOscillator();
+        osc1.frequency.value = freqs[0];
+        osc1.type = 'sine';
+        osc1.connect(gain);
+        osc1.start(now);
+        osc1.stop(now + duration);
+
+        const osc2 = dtmfContext.createOscillator();
+        osc2.frequency.value = freqs[1];
+        osc2.type = 'sine';
+        osc2.connect(gain);
+        osc2.start(now);
+        osc2.stop(now + duration);
+      } catch (e) { /* ignore audio errors */ }
+    }
+
+    // ==================== LOAD PERSISTED SETTINGS ====================
+    async function loadPersistedSettings() {
+      if (!window.electronAPI?.store) return;
+      try {
+        const activeProfile = await window.electronAPI.store.getActiveProfile();
+        if (activeProfile) {
+          state.sipConfig = {
+            server: activeProfile.server || '', port: activeProfile.port || '5060',
+            transport: activeProfile.transport || 'UDP', username: activeProfile.username || '',
+            password: activeProfile.password || '', displayName: activeProfile.displayName || ''
+          };
+        }
+        const history = await window.electronAPI.store.getCallHistory();
+        if (history?.length > 0) state.callHistory = history;
+        const contacts = await window.electronAPI.store.getContacts();
+        if (contacts?.length > 0) state.contacts = contacts;
+        if (window.electronAPI?.audio) {
+          const audioSettings = await window.electronAPI.audio.getSettings();
+          if (audioSettings) state.audioSettings = { ...state.audioSettings, ...audioSettings };
+          const recordAll = await window.electronAPI.audio.getRecordCallsSetting();
+          state.recordAllCalls = !!recordAll;
+        }
+        const appSettings = await window.electronAPI.store.get('appSettings');
+        if (appSettings) state.appSettings = { ...state.appSettings, ...appSettings };
+        // Load startup and always-on-top settings
+        if (window.electronAPI?.app) {
+          try {
+            state.launchOnStartup = await window.electronAPI.app.getStartupEnabled();
+            state.alwaysOnTop = await window.electronAPI.app.getAlwaysOnTop();
+          } catch (e) { console.log('[Settings] App settings load skipped:', e); }
+        }
+        await loadRecordingsList();
+        await refreshAudioDevices();
+        await loadGhUpdateConfig();
+        renderPage();
+        updateStatusBar();
+      } catch (err) {
+        console.error('[Settings] Failed to load:', err);
+      }
+    }
+
+    // ==================== AUDIO ENGINE ====================
+    let audioContext = null;
+    let micStream = null;
+    let micProcessor = null;
+    let rtpAudioCleanup = null;
+    let rtpStatsTimer = null;
+    let speakerGainNode = null;
+    let nextPlayTime = 0; // Scheduled playback cursor for gapless audio
+    const SAMPLE_RATE = 8000;
+    const SCHEDULE_AHEAD = 0.05; // Schedule 50ms ahead to prevent gaps
+
+    async function startAudioCapture(callId) {
+      try {
+        audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+        // Resume AudioContext (required by Chrome autoplay policy)
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+
+        // Create a persistent gain node for volume control
+        speakerGainNode = audioContext.createGain();
+        speakerGainNode.gain.value = (state.audioSettings.outputVolume || 80) / 100;
+        speakerGainNode.connect(audioContext.destination);
+
+        // Reset playback cursor
+        nextPlayTime = 0;
+
+        const audioConstraints = {
+          echoCancellation: state.audioSettings.echoCancellation !== false,
+          noiseSuppression: state.audioSettings.noiseSuppression !== false,
+          autoGainControl: state.audioSettings.autoGainControl !== false,
+          sampleRate: SAMPLE_RATE
+        };
+        if (state.audioSettings.inputDevice && state.audioSettings.inputDevice !== 'default') {
+          audioConstraints.deviceId = { exact: state.audioSettings.inputDevice };
+        }
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        const micSource = audioContext.createMediaStreamSource(micStream);
+        micProcessor = audioContext.createScriptProcessor(1024, 1, 1);
+        micProcessor.onaudioprocess = (e) => {
+          try {
+            if (state.muted || !state.activeCall) return;
+            const inputData = e.inputBuffer.getChannelData(0);
+            const pcmSamples = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+              const s = Math.max(-1, Math.min(1, inputData[i]));
+              pcmSamples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            if (window.electronAPI?.rtp) {
+              window.electronAPI.rtp.feedMic(callId, pcmSamples);
+            }
+          } catch (micErr) {
+            console.warn('[Audio] Mic processing error:', micErr.message);
+          }
+        };
+        micSource.connect(micProcessor);
+        micProcessor.connect(audioContext.destination);
+
+        // Set up output device routing via setSinkId
+        await routeOutputDevice();
+
+        setupSpeakerPlayback();
+        showRtpStats(callId);
+        console.log('[Audio] Capture started for call', callId, '- AudioContext state:', audioContext.state);
+      } catch (err) {
+        console.error('[Audio] Failed to start capture:', err);
+        showToast('Microphone access denied or unavailable', 'error');
+      }
+    }
+
+    async function routeOutputDevice() {
+      // Use setSinkId to route audio to selected output device
+      if (state.audioSettings.outputDevice && state.audioSettings.outputDevice !== 'default') {
+        try {
+          // Create a hidden audio element for setSinkId routing
+          let outputEl = document.getElementById('_audioOutput');
+          if (!outputEl) {
+            outputEl = document.createElement('audio');
+            outputEl.id = '_audioOutput';
+            outputEl.style.display = 'none';
+            document.body.appendChild(outputEl);
+          }
+          if (typeof outputEl.setSinkId === 'function') {
+            await outputEl.setSinkId(state.audioSettings.outputDevice);
+            console.log('[Audio] Output routed to device:', state.audioSettings.outputDevice);
+          }
+        } catch (err) {
+          console.warn('[Audio] setSinkId not supported or failed:', err.message);
+        }
+      }
+    }
+
+    function setupSpeakerPlayback() {
+      if (!window.electronAPI?.rtp) return;
+      rtpAudioCleanup = window.electronAPI.rtp.onAudio((data) => {
+        try {
+          if (!audioContext || audioContext.state === 'closed') return;
+          if (data && data.pcmData && data.pcmData.length > 0) {
+            playPcmAudio(data.pcmData);
+          }
+        } catch (err) {
+          console.warn('[Audio] Speaker playback error:', err.message);
+        }
+      });
+    }
+
+    function playPcmAudio(pcmArray) {
+      if (!audioContext || audioContext.state !== 'running' || !speakerGainNode) return;
+      try {
+        if (!pcmArray || pcmArray.length === 0) return;
+
+        const float32 = new Float32Array(pcmArray.length);
+        for (let i = 0; i < pcmArray.length; i++) {
+          // pcmArray values are 16-bit signed integers (-32768 to 32767)
+          float32[i] = (pcmArray[i] || 0) / 32768.0;
+        }
+
+        const buffer = audioContext.createBuffer(1, float32.length, SAMPLE_RATE);
+        buffer.getChannelData(0).set(float32);
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+
+        // Connect through the persistent gain node
+        source.connect(speakerGainNode);
+
+        // Schedule playback sequentially to prevent overlapping/gaps
+        const currentTime = audioContext.currentTime;
+        if (nextPlayTime < currentTime) {
+          // We've fallen behind — reset to slightly ahead of now
+          nextPlayTime = currentTime + 0.01;
+        }
+        source.start(nextPlayTime);
+        nextPlayTime += buffer.duration;
+      } catch (err) {
+        console.warn('[Audio] playPcmAudio error:', err.message);
+      }
+    }
+
+    function showRtpStats(callId) {
+      const statsEl = document.getElementById('rtpStats');
+      if (statsEl) statsEl.style.display = 'block';
+      rtpStatsTimer = setInterval(async () => {
+        if (!window.electronAPI?.rtp || !state.activeCall) {
+          clearInterval(rtpStatsTimer);
+          return;
+        }
+        const stats = await window.electronAPI.rtp.getStats(callId);
+        if (stats) {
+          const codecEl = document.getElementById('rtpCodec');
+          const packetsEl = document.getElementById('rtpPackets');
+          const lostEl = document.getElementById('rtpLost');
+          const jitterEl = document.getElementById('rtpJitter');
+          if (codecEl) codecEl.textContent = stats.codec || 'PCMU';
+          if (packetsEl) packetsEl.textContent = `${stats.packetsSent}/${stats.packetsReceived} pkts`;
+          if (lostEl) lostEl.textContent = `${stats.packetsLost} lost`;
+          if (jitterEl) jitterEl.textContent = `${(stats.jitter || 0).toFixed(1)}ms jitter`;
+          const statusCodec = document.getElementById('statusCodec');
+          if (statusCodec) statusCodec.textContent = 'Codec: ' + (stats.codec || 'PCMU') + '/8000';
+
+          // Store QoS data point
+          state.qosHistory.push({
+            time: Date.now(),
+            sent: stats.packetsSent,
+            received: stats.packetsReceived,
+            lost: stats.packetsLost,
+            jitter: stats.jitter || 0,
+            codec: stats.codec
+          });
+          if (state.qosHistory.length > 300) state.qosHistory.shift();
+        }
+      }, 2000);
+    }
+
+    function stopAudioCapture() {
+      if (micProcessor) { try { micProcessor.disconnect(); } catch(e){} micProcessor = null; }
+      if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+      if (speakerGainNode) { try { speakerGainNode.disconnect(); } catch(e){} speakerGainNode = null; }
+      if (audioContext && audioContext.state !== 'closed') { try { audioContext.close(); } catch(e){} audioContext = null; }
+      if (rtpAudioCleanup) { rtpAudioCleanup(); rtpAudioCleanup = null; }
+      if (rtpStatsTimer) { clearInterval(rtpStatsTimer); rtpStatsTimer = null; }
+      nextPlayTime = 0;
+      const statsEl = document.getElementById('rtpStats');
+      if (statsEl) statsEl.style.display = 'none';
+    }
+
+    // ==================== ELECTRON API ====================
+    const api = window.electronAPI;
+    let sipEventCleanup = null;
+
+    if (api) {
+      sipEventCleanup = api.sip.onEvent((event) => {
+        try {
+          console.log('[SIP Event]', event.type, event.data?.callId || '');
+          switch (event.type) {
+            case 'registered':
+              state.registered = true;
+              updateStatusBar();
+              showToast('Registered successfully via ' + state.sipConfig.transport, 'success');
+              break;
+            case 'registrationFailed':
+              state.registered = false;
+              updateStatusBar();
+              showToast('Registration failed: ' + (event.data?.reason || event.data?.status || 'Unknown'), 'error');
+              break;
+            case 'unregistered':
+              state.registered = false;
+              updateStatusBar();
+              showToast('Unregistered from SIP server', 'info');
+              break;
+            case 'incomingCall':
+              if (state.appSettings.dndMode) {
+                if (api) api.sip.hangup(event.data.callId);
+                showToast('Incoming call rejected (DND mode)', 'warning');
+                break;
+              }
+              state.incomingCall = event.data;
+              showIncomingCall(event.data);
+              sendIncomingCallNotification(event.data);
+              if (state.appSettings.autoAnswer) {
+                setTimeout(() => answerCall(), (state.appSettings.autoAnswerDelay || 3) * 1000);
+              }
+              break;
+            case 'callEstablished':
+              state.activeCall = event.data;
+              showActiveCall(event.data);
+              break;
+            case 'callEnded':
+              if (state.incomingCall && !state.activeCall) {
+                sendMissedCallNotification(state.incomingCall);
+              }
+              endCallUI();
+              showToast('Call ended: ' + (event.data?.reason || ''), 'info');
+              break;
+            case 'callFailed':
+              endCallUI();
+              showToast('Call failed: ' + (event.data?.reason || event.data?.status || 'Unknown'), 'error');
+              break;
+            case 'dtmfReceived':
+              showToast('DTMF: ' + event.data?.digit, 'info');
+              break;
+            case 'error':
+              showToast('SIP Error: ' + (event.data?.message || 'Unknown'), 'error');
+              break;
+            case 'sipError':
+              // UDP socket died - show prominent error and clean up call state
+              showToast('Connection lost: ' + (event.data?.error || 'Socket closed'), 'error');
+              if (state.activeCall) {
+                endCallUI();
+                showToast('Call dropped due to connection loss', 'error');
+              }
+              state.registered = false;
+              updateStatusBar();
+              break;
+          }
+        } catch (eventErr) {
+          console.error('[SIP Event Handler Error]', eventErr);
+          showToast('Internal error processing SIP event', 'error');
+        }
+      });
+    }
+
+    // ==================== NAVIGATION ====================
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const page = btn.dataset.page;
+        if (!page) return;
+        navigateTo(page);
+      });
+    });
+
+    function navigateTo(page) {
+      state.currentPage = page;
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      const btn = document.querySelector(`[data-page="${page}"]`);
+      if (btn) btn.classList.add('active');
+      renderPage();
+    }
+
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', (e) => {
+      const isInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT' || document.activeElement?.tagName === 'TEXTAREA';
+
+      // Global shortcuts (work even in inputs)
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case 'm': e.preventDefault(); if (state.activeCall) toggleMute(); break;
+          case 'h': e.preventDefault(); if (state.activeCall) toggleHold(); break;
+          case 'e': e.preventDefault(); if (state.activeCall) endCall(); break;
+          case 'Enter': e.preventDefault(); if (state.incomingCall) answerCall(); break;
+        }
+        return;
+      }
+
+      if (isInput) return;
+
+      // Page navigation shortcuts
+      switch (e.key) {
+        case 'd': case 'D': navigateTo('dialpad'); break;
+        case 'c': case 'C': navigateTo('contacts'); break;
+        case 'h': case 'H': if (!state.activeCall) navigateTo('history'); break;
+        case 'v': case 'V': navigateTo('voicemail'); break;
+        case 'r': case 'R': navigateTo('recordings'); break;
+        case 'q': case 'Q': navigateTo('qos'); break;
+        case 'a': case 'A': navigateTo('queue'); break;
+        case 's': case 'S': navigateTo('settings'); break;
+        case '?': navigateTo('shortcuts'); break;
+      }
+
+      // Dialpad shortcuts
+      if (state.currentPage === 'dialpad') {
+        if (/^[0-9*#]$/.test(e.key)) {
+          pressKey(e.key);
+        } else if (e.key === 'Backspace') {
+          state.dialNumber = state.dialNumber.slice(0, -1);
+          updateDialDisplay();
+        } else if (e.key === 'Enter' && state.dialNumber) {
+          makeCall();
+        } else if (e.key === 'Escape') {
+          state.dialNumber = '';
+          updateDialDisplay();
+        }
+      }
+
+      // In-call DTMF via number keys
+      if (state.activeCall && /^[0-9*#]$/.test(e.key)) {
+        sendInCallDtmf(e.key);
+      }
+    });
+
+    // ==================== RENDERING ====================
+    function renderPage() {
+      const el = document.getElementById('mainContent');
+      switch (state.currentPage) {
+        case 'dialpad': el.innerHTML = renderDialpad(); break;
+        case 'contacts': el.innerHTML = renderContacts(); break;
+        case 'history': el.innerHTML = renderHistory(); break;
+        case 'voicemail': el.innerHTML = renderVoicemail(); break;
+        case 'codes': el.innerHTML = renderFeatureCodes(); break;
+        case 'recordings': el.innerHTML = renderRecordings(); break;
+        case 'qos': el.innerHTML = renderQoS(); break;
+        case 'queue': el.innerHTML = renderQueue(); break;
+        case 'shortcuts': el.innerHTML = renderShortcuts(); break;
+        case 'settings': el.innerHTML = renderSettings(); break;
+      }
+      lucide.createIcons();
+    }
+
+    // ==================== DIALPAD PAGE ====================
+    function renderDialpad() {
+      const keys = [
+        { n: '1', sub: '' }, { n: '2', sub: 'ABC' }, { n: '3', sub: 'DEF' },
+        { n: '4', sub: 'GHI' }, { n: '5', sub: 'JKL' }, { n: '6', sub: 'MNO' },
+        { n: '7', sub: 'PQRS' }, { n: '8', sub: 'TUV' }, { n: '9', sub: 'WXYZ' },
+        { n: '*', sub: '' }, { n: '0', sub: '+' }, { n: '#', sub: '' }
+      ];
+      // Speed dial contacts
+      const speedDialContacts = state.contacts.filter(c => c.speedDial);
+      const speedDialHtml = speedDialContacts.length > 0 ? `
+        <div style="margin-top:24px;width:100%">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Speed Dial</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+            ${speedDialContacts.slice(0, 6).map(c => `
+              <button class="btn btn-ghost btn-sm" onclick="dialContact('${c.ext}')" style="min-width:80px">
+                <span style="font-size:10px;color:var(--primary-light)">${c.name.charAt(0)}</span> ${c.ext}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      ` : '';
+
+      return `
+        <div class="dialpad-container">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+            <span class="status-dot ${state.registered ? 'green' : 'red'}"></span>
+            <span style="font-size:12px;color:var(--muted)">${state.registered ? 'SIP Registered — Local Engine' : 'Not Registered'}</span>
+            ${state.appSettings.dndMode ? '<span style="font-size:11px;color:var(--danger);margin-left:8px;font-weight:600">DND</span>' : ''}
+          </div>
+          <div class="dial-display">
+            <div class="dial-number" id="dialNumber">${state.dialNumber || '&nbsp;'}</div>
+            <div class="dial-label">${state.dialNumber ? 'Press Enter or Call to dial' : 'Enter number or extension'}</div>
+          </div>
+          <div class="dialpad-grid">
+            ${keys.map(k => `
+              <button class="dial-key" onclick="pressKey('${k.n}')">
+                ${k.n}
+                ${k.sub ? `<span class="dial-key-sub">${k.sub}</span>` : ''}
+              </button>
+            `).join('')}
+          </div>
+          <div class="dial-actions">
+            <button class="call-btn small" onclick="state.dialNumber = state.dialNumber.slice(0,-1); updateDialDisplay()">
+              <i data-lucide="delete" style="width:20px;height:20px"></i>
+            </button>
+            <button class="call-btn green" onclick="makeCall()">
+              <i data-lucide="phone" style="width:24px;height:24px"></i>
+            </button>
+            <button class="call-btn small" onclick="state.dialNumber = ''; updateDialDisplay()">
+              <i data-lucide="x" style="width:20px;height:20px"></i>
+            </button>
+          </div>
+          ${speedDialHtml}
+        </div>
+      `;
+    }
+
+    // ==================== CONTACTS PAGE ====================
+    function renderContacts() {
+      const statusColors = { online: 'var(--success)', busy: 'var(--danger)', away: 'var(--warning)', offline: 'rgba(100,90,160,0.4)' };
+      return `
+        <div class="page-title"><i data-lucide="users"></i> Contacts
+          <button class="btn btn-primary btn-sm" onclick="openAddContactModal()" style="margin-left:auto"><i data-lucide="user-plus" style="width:14px;height:14px"></i> Add</button>
+        </div>
+        <div class="search-box">
+          <i data-lucide="search"></i>
+          <input class="search-input" placeholder="Search contacts..." id="contactSearch" oninput="filterContacts(this.value)">
+        </div>
+        <div class="contact-list" id="contactList">
+          ${state.contacts.length === 0 ? `
+            <div class="empty-state">
+              <i data-lucide="users" style="width:48px;height:48px"></i>
+              <p>No contacts yet</p>
+              <p class="hint">Click "Add" to create your first contact</p>
+            </div>
+          ` : state.contacts.map(c => `
+            <div class="contact-item" id="contact-${c.id}">
+              <div class="contact-avatar" onclick="dialContact('${c.ext}')">${c.name.charAt(0)}</div>
+              <div class="contact-info" onclick="dialContact('${c.ext}')">
+                <div class="contact-name">${c.name}${c.speedDial ? ' <i data-lucide="star" style="width:12px;height:12px;color:var(--warning);display:inline"></i>' : ''}</div>
+                <div class="contact-ext">Ext. ${c.ext}${c.company ? ' · ' + c.company : ''}</div>
+              </div>
+              <div class="contact-status" style="background:${statusColors[c.status || 'offline']};box-shadow:0 0 6px ${statusColors[c.status || 'offline']}"></div>
+              <div class="contact-actions">
+                <button class="btn-icon btn-xs" onclick="editContact('${c.id}')" title="Edit"><i data-lucide="pencil" style="width:12px;height:12px"></i></button>
+                <button class="btn-icon btn-xs" onclick="deleteContact('${c.id}')" title="Delete" style="color:var(--danger)"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function filterContacts(query) {
+      const q = query.toLowerCase();
+      document.querySelectorAll('.contact-item').forEach(item => {
+        const name = item.querySelector('.contact-name')?.textContent.toLowerCase() || '';
+        const ext = item.querySelector('.contact-ext')?.textContent.toLowerCase() || '';
+        item.style.display = (name.includes(q) || ext.includes(q)) ? 'flex' : 'none';
+      });
+    }
+
+    // ==================== CALL HISTORY PAGE ====================
+    function renderHistory() {
+      let filtered = [...state.callHistory];
+      return `
+        <div class="page-title"><i data-lucide="clock"></i> Call History
+          <button class="btn btn-ghost btn-sm" onclick="clearCallHistory()" style="margin-left:auto"><i data-lucide="trash-2" style="width:14px;height:14px"></i> Clear</button>
+        </div>
+        <div class="tabs" id="historyTabs">
+          <button class="tab active" onclick="filterHistory('all', this)">All</button>
+          <button class="tab" onclick="filterHistory('incoming', this)">Incoming</button>
+          <button class="tab" onclick="filterHistory('outgoing', this)">Outgoing</button>
+          <button class="tab" onclick="filterHistory('missed', this)">Missed</button>
+        </div>
+        <div id="historyList">
+          ${state.callHistory.length === 0 ? `
+            <div class="empty-state">
+              <i data-lucide="clock" style="width:48px;height:48px"></i>
+              <p>No call history</p>
+              <p class="hint">Your calls will appear here</p>
+            </div>
+          ` : state.callHistory.map(h => `
+            <div class="history-item" data-type="${h.type}">
+              <div class="history-icon ${h.type}">
+                <i data-lucide="${h.type === 'incoming' ? 'phone-incoming' : h.type === 'outgoing' ? 'phone-outgoing' : 'phone-missed'}" style="width:18px;height:18px"></i>
+              </div>
+              <div class="history-info">
+                <div class="history-name">${h.name}</div>
+                <div class="history-detail">Ext. ${h.ext}</div>
+              </div>
+              <div>
+                <div class="history-time">${formatTimestamp(h.timestamp)}</div>
+                ${h.duration ? `<div class="history-duration">${h.duration}</div>` : ''}
+              </div>
+              <button class="call-btn small" style="width:36px;height:36px" onclick="dialContact('${h.ext}')">
+                <i data-lucide="phone" style="width:16px;height:16px"></i>
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function filterHistory(type, btn) {
+      document.querySelectorAll('#historyTabs .tab').forEach(t => t.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      document.querySelectorAll('#historyList .history-item').forEach(item => {
+        if (type === 'all') { item.style.display = 'flex'; }
+        else { item.style.display = item.dataset.type === type ? 'flex' : 'none'; }
+      });
+    }
+
+    async function clearCallHistory() {
+      if (!confirm('Clear all call history?')) return;
+      state.callHistory = [];
+      if (window.electronAPI?.store) await window.electronAPI.store.clearCallHistory();
+      renderPage();
+      showToast('Call history cleared', 'success');
+    }
+
+    // ==================== VOICEMAIL PAGE ====================
+    function renderVoicemail() {
+      return `
+        <div class="page-title"><i data-lucide="voicemail"></i> Voicemail</div>
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
+          <button class="btn btn-ghost btn-sm" onclick="dialContact('*97')"><i data-lucide="key-round" style="width:14px;height:14px"></i> *97 Check VM</button>
+          <button class="btn btn-ghost btn-sm" onclick="dialContact('*98')"><i data-lucide="log-in" style="width:14px;height:14px"></i> *98 VM Login</button>
+        </div>
+        <div class="glass-panel empty-state" style="padding:60px">
+          <i data-lucide="voicemail" style="width:48px;height:48px"></i>
+          <p>Voicemail messages will appear here when connected to your PBX.</p>
+          <p class="hint">Dial *97 to check voicemail via phone, or *98 for voicemail login.</p>
+        </div>
+      `;
+    }
+
+    // ==================== FEATURE CODES PAGE ====================
+    function renderFeatureCodes() {
+      return `
+        <div class="page-title"><i data-lucide="hash"></i> Feature Codes</div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Quick access to FreePBX/Asterisk feature codes. Click to dial.</p>
+        <div class="feature-codes">
+          ${state.featureCodes.map(f => `
+            <button class="feature-code-btn" onclick="dialContact('${f.code}')">
+              <div class="code">${f.code}</div>
+              <div class="desc">${f.desc}</div>
+            </button>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // ==================== RECORDINGS PAGE ====================
+    function renderRecordings() {
+      const list = state.recordingsList;
+      return `
+        <div class="page-title"><i data-lucide="disc"></i> Recordings</div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <button class="btn btn-ghost btn-sm" onclick="loadRecordingsList()"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Refresh</button>
+          <button class="btn btn-ghost btn-sm" onclick="openRecordingsFolder()"><i data-lucide="folder-open" style="width:14px;height:14px"></i> Open Folder</button>
+        </div>
+        ${list.length === 0 ? `
+          <div class="glass-panel empty-state" style="padding:60px">
+            <i data-lucide="disc" style="width:48px;height:48px"></i>
+            <p>No recordings yet</p>
+            <p class="hint">Use the Record button during a call or enable auto-recording in Settings.</p>
+          </div>
+        ` : `
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${list.map((r, i) => `
+              <div class="glass-panel" style="padding:12px 16px;display:flex;align-items:center;gap:12px">
+                <div style="width:36px;height:36px;border-radius:50%;background:var(--glass);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <i data-lucide="file-audio" style="width:18px;height:18px;color:var(--primary-light)"></i>
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;font-weight:500;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.target || 'Unknown'}</div>
+                  <div style="font-size:11px;color:var(--muted)">${r.createdAtFormatted} &middot; ${r.estimatedDurationFormatted} &middot; ${r.fileSizeFormatted}</div>
+                </div>
+                <div style="display:flex;gap:4px;flex-shrink:0">
+                  <button class="btn btn-ghost btn-sm" onclick="playRecording(${i})" title="Play" style="padding:6px"><i data-lucide="play" style="width:14px;height:14px"></i></button>
+                  <button class="btn btn-ghost btn-sm" onclick="deleteRecording('${r.fileName}')" title="Delete" style="padding:6px;color:var(--danger)"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+        <div id="audioPlayerContainer" style="display:none;margin-top:16px">
+          <div class="glass-panel" style="padding:16px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+              <span style="font-size:13px;font-weight:500;color:var(--fg)" id="playerFileName">—</span>
+              <button class="btn btn-ghost btn-sm" onclick="stopPlayback()" style="margin-left:auto;padding:4px 8px"><i data-lucide="square" style="width:14px;height:14px"></i> Stop</button>
+            </div>
+            <audio id="recordingPlayer" controls style="width:100%;height:32px;outline:none"></audio>
+          </div>
+        </div>
+      `;
+    }
+
+    // ==================== QoS MONITOR PAGE ====================
+    function renderQoS() {
+      const latest = state.qosHistory.length > 0 ? state.qosHistory[state.qosHistory.length - 1] : null;
+      const totalLost = latest?.lost || 0;
+      const totalSent = latest?.sent || 0;
+      const lossRate = totalSent > 0 ? ((totalLost / totalSent) * 100).toFixed(2) : '0.00';
+      const jitter = latest?.jitter?.toFixed(1) || '0.0';
+      const codec = latest?.codec || '—';
+      const lossColor = parseFloat(lossRate) > 5 ? 'red' : parseFloat(lossRate) > 1 ? 'yellow' : 'green';
+      const jitterColor = parseFloat(jitter) > 50 ? 'red' : parseFloat(jitter) > 20 ? 'yellow' : 'green';
+
+      return `
+        <div class="page-title"><i data-lucide="activity"></i> QoS Monitor</div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Real-time call quality metrics and network diagnostics.</p>
+        <div class="diag-grid">
+          <div class="diag-card">
+            <div class="diag-label">Packet Loss</div>
+            <div class="diag-value ${lossColor}">${lossRate}%</div>
+          </div>
+          <div class="diag-card">
+            <div class="diag-label">Jitter</div>
+            <div class="diag-value ${jitterColor}">${jitter} ms</div>
+          </div>
+          <div class="diag-card">
+            <div class="diag-label">Codec</div>
+            <div class="diag-value">${codec}</div>
+          </div>
+          <div class="diag-card">
+            <div class="diag-label">Packets Sent</div>
+            <div class="diag-value">${latest?.sent || 0}</div>
+          </div>
+          <div class="diag-card">
+            <div class="diag-label">Packets Received</div>
+            <div class="diag-value">${latest?.received || 0}</div>
+          </div>
+          <div class="diag-card">
+            <div class="diag-label">Packets Lost</div>
+            <div class="diag-value ${lossColor}">${totalLost}</div>
+          </div>
+        </div>
+        <div class="glass-panel" style="padding:20px;margin-top:20px">
+          <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+            <i data-lucide="network" style="width:16px;height:16px;color:var(--primary-light)"></i> Network Diagnostics
+          </h3>
+          <div class="arch-diagram">
+            <div class="arch-box local">
+              <div>CloudPhone Pro</div>
+              <div class="arch-label">Local SIP Engine</div>
+            </div>
+            <div class="arch-arrow">→ ${state.sipConfig.transport || 'SIP'} →</div>
+            <div class="arch-box remote">
+              <div>${state.sipConfig.server || 'PBX Server'}</div>
+              <div class="arch-label">FreePBX / Asterisk</div>
+            </div>
+          </div>
+          <div style="margin-top:12px;font-size:12px;color:var(--muted);text-align:center">
+            ${state.registered ? `<span style="color:var(--success)">Connected</span> · ${state.sipConfig.username}@${state.sipConfig.server}:${state.sipConfig.port}` : 'Not connected'}
+          </div>
+        </div>
+        ${state.qosHistory.length > 0 ? `
+          <div class="glass-panel" style="padding:20px;margin-top:20px">
+            <h3 style="font-size:14px;font-weight:600;margin-bottom:12px">Quality History (last ${state.qosHistory.length} samples)</h3>
+            <div style="display:flex;align-items:flex-end;gap:2px;height:60px">
+              ${state.qosHistory.slice(-60).map(q => {
+                const h = Math.max(2, Math.min(60, (q.jitter || 0) * 1.2));
+                const color = q.jitter > 50 ? 'var(--danger)' : q.jitter > 20 ? 'var(--warning)' : 'var(--success)';
+                return `<div style="width:4px;height:${h}px;background:${color};border-radius:2px;opacity:0.7" title="Jitter: ${q.jitter?.toFixed(1)}ms"></div>`;
+              }).join('')}
+            </div>
+            <div style="font-size:10px;color:var(--muted);margin-top:4px">Jitter over time (lower is better)</div>
+          </div>
+        ` : ''}
+      `;
+    }
+
+    // ==================== QUEUE AGENT PAGE ====================
+    function renderQueue() {
+      const qs = state.queueState;
+      const statusColors = { 'logged_out': 'var(--muted)', 'available': 'var(--success)', 'paused': 'var(--warning)' };
+      const statusLabels = { 'logged_out': 'Logged Out', 'available': 'Available', 'paused': 'Paused' };
+      const loginDuration = qs.loginTime ? formatDuration(Math.floor((Date.now() - qs.loginTime) / 1000)) : '--:--:--';
+
+      return `
+        <div class="page-title"><i data-lucide="headset"></i> Queue Agent Panel</div>
+
+        <div class="glass-panel" style="padding:20px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="width:12px;height:12px;border-radius:50%;background:${statusColors[qs.agentStatus] || 'var(--muted)'}"></div>
+              <div>
+                <div style="font-size:16px;font-weight:600">${statusLabels[qs.agentStatus] || 'Unknown'}</div>
+                <div style="font-size:12px;color:var(--muted)">${qs.agentStatus === 'paused' && qs.agentPauseReason ? 'Reason: ' + qs.agentPauseReason : qs.agentStatus !== 'logged_out' ? 'Logged in: ' + loginDuration : 'Not logged into any queue'}</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              ${qs.agentStatus === 'logged_out' ? `
+                <button class="btn btn-primary btn-sm" onclick="queueLogin()"><i data-lucide="log-in" style="width:14px;height:14px"></i> Login</button>
+              ` : `
+                ${qs.agentStatus === 'available' ? `
+                  <button class="btn btn-ghost btn-sm" style="border-color:var(--warning);color:var(--warning)" onclick="queuePause()"><i data-lucide="pause" style="width:14px;height:14px"></i> Pause</button>
+                ` : `
+                  <button class="btn btn-primary btn-sm" onclick="queueUnpause()"><i data-lucide="play" style="width:14px;height:14px"></i> Resume</button>
+                `}
+                <button class="btn btn-ghost btn-sm" style="border-color:var(--danger);color:var(--danger)" onclick="queueLogout()"><i data-lucide="log-out" style="width:14px;height:14px"></i> Logout</button>
+              `}
+            </div>
+          </div>
+
+          ${qs.agentStatus !== 'logged_out' ? `
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+              <div style="background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:16px;text-align:center">
+                <div style="font-size:24px;font-weight:700;color:var(--primary-light)">${qs.callsHandled}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:4px">Calls Handled</div>
+              </div>
+              <div style="background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:16px;text-align:center">
+                <div style="font-size:24px;font-weight:700;color:var(--warning)">${qs.queues.reduce((sum, q) => sum + (q.callsWaiting || 0), 0)}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:4px">Calls Waiting</div>
+              </div>
+              <div style="background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:16px;text-align:center">
+                <div style="font-size:24px;font-weight:700;color:var(--info)">${loginDuration}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:4px">Login Duration</div>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        ${qs.queues.length > 0 ? `
+          <div class="page-title" style="font-size:14px;margin-bottom:8px">Queue Membership</div>
+          ${qs.queues.map(q => `
+            <div class="glass-panel" style="padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
+              <div>
+                <div style="font-size:14px;font-weight:500">${q.name}</div>
+                <div style="font-size:11px;color:var(--muted)">${q.callsWaiting || 0} waiting &middot; Avg wait: ${q.avgWaitTime || 0}s &middot; ${q.members || 0} members</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--success-dim);color:var(--success)">Active</span>
+              </div>
+            </div>
+          `).join('')}
+        ` : `
+          <div class="glass-panel" style="padding:40px;text-align:center">
+            <i data-lucide="headset" style="width:48px;height:48px;color:var(--muted);margin-bottom:12px"></i>
+            <div style="font-size:14px;color:var(--muted);margin-bottom:8px">No Queue Membership</div>
+            <div style="font-size:12px;color:var(--muted)">Configure queues in Settings, then click Login to start receiving queue calls.</div>
+          </div>
+        `}
+
+        <div class="glass-panel" style="padding:16px;margin-top:16px">
+          <h4 style="font-size:13px;font-weight:500;margin-bottom:12px"><i data-lucide="settings" style="width:14px;height:14px;color:var(--primary-light)"></i> Queue Configuration</h4>
+          <div class="form-group">
+            <label class="form-label">Queue Names (comma-separated)</label>
+            <input class="form-input" id="queueNames" value="${(state.queueSettings.queues || []).map(q => q.name).join(', ')}" placeholder="e.g. Sales, Support, Billing">
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+            <label class="form-checkbox"><input type="checkbox" ${state.queueSettings.autoLogin ? 'checked' : ''} onchange="saveQueueSettings()"> Auto-login on registration</label>
+            <button class="btn btn-ghost btn-sm" onclick="saveQueueSettings()"><i data-lucide="save" style="width:14px;height:14px"></i> Save</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function formatDuration(seconds) {
+      if (!seconds || seconds < 0) return '00:00:00';
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+    }
+
+    async function queueLogin() {
+      const names = (document.getElementById('queueNames')?.value || '').split(',').map(n => n.trim()).filter(Boolean);
+      if (names.length === 0) {
+        showToast('Please configure at least one queue name', 'warning');
+        return;
+      }
+      const queues = names.map(name => ({ id: name.toLowerCase().replace(/\s+/g, '_'), name }));
+      if (api?.queue) {
+        const result = await api.queue.login(queues);
+        if (result.success) {
+          state.queueState = result.state;
+          showToast('Logged into ' + names.length + ' queue(s)', 'success');
+          renderPage();
+        } else {
+          showToast('Queue login failed: ' + result.error, 'error');
+        }
+      }
+    }
+
+    async function queueLogout() {
+      if (api?.queue) {
+        const result = await api.queue.logout();
+        if (result.success) {
+          state.queueState = { agentStatus: 'logged_out', queues: [], loginTime: null, callsHandled: 0, totalTalkTime: 0, agentPauseReason: '' };
+          showToast('Logged out of all queues', 'info');
+          renderPage();
+        }
+      }
+    }
+
+    async function queuePause() {
+      const reason = prompt('Pause reason (optional):') || '';
+      if (api?.queue) {
+        const result = await api.queue.pause(reason);
+        if (result.success) {
+          state.queueState.agentStatus = 'paused';
+          state.queueState.agentPauseReason = reason;
+          showToast('Queue paused' + (reason ? ': ' + reason : ''), 'warning');
+          renderPage();
+        }
+      }
+    }
+
+    async function queueUnpause() {
+      if (api?.queue) {
+        const result = await api.queue.unpause();
+        if (result.success) {
+          state.queueState.agentStatus = 'available';
+          state.queueState.agentPauseReason = '';
+          showToast('Queue resumed — now available', 'success');
+          renderPage();
+        }
+      }
+    }
+
+    async function saveQueueSettings() {
+      const names = (document.getElementById('queueNames')?.value || '').split(',').map(n => n.trim()).filter(Boolean);
+      const autoLogin = document.querySelector('#queueNames')?.closest('.glass-panel')?.querySelector('input[type=checkbox]')?.checked || false;
+      state.queueSettings = {
+        queues: names.map(name => ({ id: name.toLowerCase().replace(/\s+/g, '_'), name })),
+        autoLogin
+      };
+      if (api?.queue) {
+        await api.queue.saveSettings(state.queueSettings);
+        showToast('Queue settings saved', 'success');
+      }
+    }
+
+    // ==================== KEYBOARD SHORTCUTS PAGE ====================
+    function renderShortcuts() {
+      const shortcuts = [
+        { keys: ['D'], desc: 'Open Dialpad' },
+        { keys: ['C'], desc: 'Open Contacts' },
+        { keys: ['H'], desc: 'Open Call History' },
+        { keys: ['V'], desc: 'Open Voicemail' },
+        { keys: ['R'], desc: 'Open Recordings' },
+        { keys: ['Q'], desc: 'Open QoS Monitor' },
+        { keys: ['A'], desc: 'Open Queue Agent' },
+        { keys: ['S'], desc: 'Open Settings' },
+        { keys: ['?'], desc: 'Show Keyboard Shortcuts' },
+        { keys: ['0-9', '*', '#'], desc: 'Dial digits (on dialpad)' },
+        { keys: ['Enter'], desc: 'Place call (on dialpad)' },
+        { keys: ['Backspace'], desc: 'Delete last digit' },
+        { keys: ['Escape'], desc: 'Clear dial number' },
+        { keys: ['Ctrl', 'M'], desc: 'Toggle mute (during call)' },
+        { keys: ['Ctrl', 'H'], desc: 'Toggle hold (during call)' },
+        { keys: ['Ctrl', 'E'], desc: 'End current call' },
+        { keys: ['Ctrl', 'Enter'], desc: 'Answer incoming call' }
+      ];
+      return `
+        <div class="page-title"><i data-lucide="keyboard"></i> Keyboard Shortcuts</div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Navigate faster with keyboard shortcuts. Press any key shown below.</p>
+        <div class="shortcut-list">
+          ${shortcuts.map(s => `
+            <div class="shortcut-item">
+              <span style="font-size:13px;color:var(--fg)">${s.desc}</span>
+              <div class="shortcut-keys">
+                ${s.keys.map(k => `<span class="kbd">${k}</span>`).join('<span style="color:var(--muted);font-size:10px;margin:0 2px">+</span>')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // ==================== SETTINGS PAGE ====================
+    function renderSettings() {
+      const c = state.sipConfig;
+      const a = state.audioSettings;
+      const ap = state.appSettings;
+      return `
+        <div class="page-title"><i data-lucide="settings"></i> Settings</div>
+
+        <div class="settings-section glass-panel" style="padding:20px">
+          <h3><i data-lucide="server" style="width:18px;height:18px;color:var(--primary-light)"></i> SIP Account</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Server / IP</label>
+              <input class="form-input" id="sipServer" value="${c.server}" placeholder="e.g. 45.32.170.124">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Port</label>
+              <input class="form-input" id="sipPort" value="${c.port}" placeholder="5060">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Extension / Username</label>
+              <input class="form-input" id="sipUsername" value="${c.username}" placeholder="e.g. 107">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Password</label>
+              <input class="form-input" id="sipPassword" type="password" value="${c.password}" placeholder="SIP password">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Transport</label>
+              <select class="form-input form-select" id="sipTransport">
+                <option value="UDP" ${c.transport === 'UDP' ? 'selected' : ''}>UDP</option>
+                <option value="TCP" ${c.transport === 'TCP' ? 'selected' : ''}>TCP</option>
+                <option value="TLS" ${c.transport === 'TLS' ? 'selected' : ''}>TLS (Encrypted)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Display Name</label>
+              <input class="form-input" id="sipDisplayName" value="${c.displayName}" placeholder="Your name">
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-primary" onclick="sipRegister()"><i data-lucide="plug" style="width:14px;height:14px"></i> ${state.registered ? 'Re-Register' : 'Register'}</button>
+            ${state.registered ? '<button class="btn btn-ghost" onclick="sipUnregister()"><i data-lucide="plug-zap" style="width:14px;height:14px"></i> Unregister</button>' : ''}
+            <button class="btn btn-ghost" onclick="saveSipConfig()"><i data-lucide="save" style="width:14px;height:14px"></i> Save</button>
+          </div>
+        </div>
+
+        <div class="settings-section glass-panel" style="padding:20px">
+          <h3><i data-lucide="headphones" style="width:18px;height:18px;color:var(--primary-light)"></i> Audio Devices</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Microphone</label>
+              <select class="form-input form-select" id="audioInputDevice" onchange="saveAudioSettings()">
+                <option value="default">System Default</option>
+                ${state.audioDevices.inputs.map(d => `<option value="${d.deviceId}" ${a.inputDevice === d.deviceId ? 'selected' : ''}>${d.label || 'Microphone ' + d.deviceId.slice(0,8)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Speaker</label>
+              <select class="form-input form-select" id="audioOutputDevice" onchange="saveAudioSettings()">
+                <option value="default">System Default</option>
+                ${state.audioDevices.outputs.map(d => `<option value="${d.deviceId}" ${a.outputDevice === d.deviceId ? 'selected' : ''}>${d.label || 'Speaker ' + d.deviceId.slice(0,8)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Ringtone Device</label>
+            <select class="form-input form-select" id="audioRingtoneDevice" onchange="saveAudioSettings()">
+              <option value="default">Same as Speaker</option>
+              ${state.audioDevices.outputs.map(d => `<option value="${d.deviceId}" ${a.ringtoneDevice === d.deviceId ? 'selected' : ''}>${d.label || 'Speaker ' + d.deviceId.slice(0,8)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-row" style="margin-top:8px">
+            <div class="form-group">
+              <label class="form-label">Mic Volume: <span id="inputVolLabel">${a.inputVolume}%</span></label>
+              <input type="range" min="0" max="100" value="${a.inputVolume}" id="audioInputVolume" oninput="saveAudioSettings()" style="width:100%;accent-color:var(--primary)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Speaker Volume: <span id="outputVolLabel">${a.outputVolume}%</span></label>
+              <input type="range" min="0" max="100" value="${a.outputVolume}" id="audioOutputVolume" oninput="saveAudioSettings()" style="width:100%;accent-color:var(--primary)">
+            </div>
+          </div>
+          <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
+            <label class="form-checkbox"><input type="checkbox" id="audioEchoCancellation" ${a.echoCancellation ? 'checked' : ''} onchange="saveAudioSettings()"> Echo Cancellation</label>
+            <label class="form-checkbox"><input type="checkbox" id="audioNoiseSuppression" ${a.noiseSuppression ? 'checked' : ''} onchange="saveAudioSettings()"> Noise Suppression</label>
+            <label class="form-checkbox"><input type="checkbox" id="audioAutoGainControl" ${a.autoGainControl ? 'checked' : ''} onchange="saveAudioSettings()"> Auto Gain</label>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button class="btn btn-ghost btn-sm" onclick="testMicrophone()"><i data-lucide="mic" style="width:14px;height:14px"></i> Test Mic</button>
+            <button class="btn btn-ghost btn-sm" onclick="testSpeaker()"><i data-lucide="volume-2" style="width:14px;height:14px"></i> Test Speaker</button>
+            <button class="btn btn-ghost btn-sm" onclick="refreshAudioDevices()"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Refresh Devices</button>
+          </div>
+        </div>
+
+        <div class="settings-section glass-panel" style="padding:20px">
+          <h3><i data-lucide="disc" style="width:18px;height:18px;color:var(--primary-light)"></i> Recording</h3>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+            <span style="font-size:13px">Auto-record all calls</span>
+            <label class="toggle-switch">
+              <input type="checkbox" ${state.recordAllCalls ? 'checked' : ''} onchange="toggleAutoRecord(this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section glass-panel" style="padding:20px">
+          <h3><i data-lucide="sliders-horizontal" style="width:18px;height:18px;color:var(--primary-light)"></i> Application</h3>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px">Do Not Disturb</span>
+              <label class="toggle-switch">
+                <input type="checkbox" ${ap.dndMode ? 'checked' : ''} onchange="toggleAppSetting('dndMode', this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px">Auto-Answer Incoming Calls</span>
+              <label class="toggle-switch">
+                <input type="checkbox" ${ap.autoAnswer ? 'checked' : ''} onchange="toggleAppSetting('autoAnswer', this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px">Start Minimized</span>
+              <label class="toggle-switch">
+                <input type="checkbox" ${ap.startMinimized ? 'checked' : ''} onchange="toggleAppSetting('startMinimized', this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px">Minimize to System Tray</span>
+              <label class="toggle-switch">
+                <input type="checkbox" ${ap.minimizeToTray ? 'checked' : ''} onchange="toggleAppSetting('minimizeToTray', this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px">Launch on Windows Startup</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="startupToggle" ${state.launchOnStartup ? 'checked' : ''} onchange="toggleStartupSetting(this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px">Always on Top</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="alwaysOnTopToggle" ${state.alwaysOnTop ? 'checked' : ''} onchange="toggleAlwaysOnTop(this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px">Desktop Notifications</span>
+              <label class="toggle-switch">
+                <input type="checkbox" ${ap.showNotifications ? 'checked' : ''} onchange="toggleAppSetting('showNotifications', this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="form-group" style="margin-top:4px">
+              <label class="form-label">DTMF Tone Volume: ${ap.dtmfVolume || 50}%</label>
+              <input type="range" min="0" max="100" value="${ap.dtmfVolume || 50}" oninput="toggleAppSetting('dtmfVolume', parseInt(this.value))" style="width:100%;accent-color:var(--primary)">
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section glass-panel" style="padding:20px">
+          <h3><i data-lucide="phone-forwarded" style="width:18px;height:18px;color:var(--primary-light)"></i> Multi-Line Accounts</h3>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Register multiple SIP accounts simultaneously. Each line operates independently with its own registration and call state.</div>
+          <div id="multiLineList">
+            ${state.lines.length > 0 ? state.lines.map((line, i) => `
+              <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius-sm);margin-bottom:8px">
+                <div style="width:10px;height:10px;border-radius:50%;background:${line.registered ? 'var(--success)' : 'var(--muted)'}"></div>
+                <div style="flex:1">
+                  <div style="font-size:13px;font-weight:500">${line.label || 'Line ' + (i+1)}</div>
+                  <div style="font-size:11px;color:var(--muted)">${line.config?.username || ''}@${line.config?.server || ''} &middot; ${line.registered ? 'Registered' : 'Disconnected'}</div>
+                </div>
+                <div style="display:flex;gap:4px">
+                  ${line.id === state.activeLineId ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--primary);color:white">Active</span>' : '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="setActiveLine(\'' + line.id + '\')">Set Active</button>'}
+                  <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--danger)" onclick="removeLine(\'' + line.id + '\')"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>
+                </div>
+              </div>
+            `).join('') : '<div style="font-size:12px;color:var(--muted);padding:12px;text-align:center">No additional lines configured. Your primary SIP account above is Line 1.</div>'}
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-ghost btn-sm" onclick="addNewLine()"><i data-lucide="plus" style="width:14px;height:14px"></i> Add Line</button>
+            <button class="btn btn-ghost btn-sm" onclick="refreshLines()"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Refresh Status</button>
+          </div>
+        </div>
+
+        <div class="settings-section glass-panel" style="padding:20px">
+          <h3><i data-lucide="bell" style="width:18px;height:18px;color:var(--primary-light)"></i> Notifications</h3>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px">Native OS Notifications</span>
+              <label class="toggle-switch">
+                <input type="checkbox" ${state.nativeNotifications ? 'checked' : ''} onchange="toggleNativeNotifications(this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div style="font-size:11px;color:var(--muted)">Show system notifications for incoming calls, missed calls, and voicemail with actionable Answer/Decline buttons.</div>
+          </div>
+        </div>
+
+        <div class="settings-section glass-panel" style="padding:20px">
+          <h3><i data-lucide="link" style="width:18px;height:18px;color:var(--primary-light)"></i> CRM / Click-to-Call</h3>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:12px;color:var(--muted)">Register CloudPhone Pro as the default handler for <code style='font-family:var(--mono);font-size:11px;background:var(--glass);padding:1px 4px;border-radius:3px'>tel:</code>, <code style='font-family:var(--mono);font-size:11px;background:var(--glass);padding:1px 4px;border-radius:3px'>sip:</code>, and <code style='font-family:var(--mono);font-size:11px;background:var(--glass);padding:1px 4px;border-radius:3px'>callto:</code> protocol links. Clicking phone numbers in your browser or CRM will launch a call.</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-primary btn-sm" onclick="registerProtocols()"><i data-lucide="link" style="width:14px;height:14px"></i> Register as Default</button>
+              <span id="protocolStatus" style="font-size:11px;color:var(--muted)">Status: ${state.protocolStatus.tel ? 'Registered' : 'Not registered'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section glass-panel" style="padding:20px">
+          <h3><i data-lucide="download-cloud" style="width:18px;height:18px;color:var(--primary-light)"></i> Updates</h3>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Configure your GitHub repository to enable automatic updates. The app checks for new releases every 30 minutes.</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">GitHub Owner / Org</label>
+              <input class="form-input" id="ghOwner" value="${state.ghUpdateConfig?.owner || ''}" placeholder="e.g. your-username">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Repository Name</label>
+              <input class="form-input" id="ghRepo" value="${state.ghUpdateConfig?.repo || ''}" placeholder="e.g. cloudphone-pro">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Access Token <span style="font-size:10px;color:var(--muted)">(private repos only)</span></label>
+              <input class="form-input" id="ghToken" type="password" value="${state.ghUpdateConfig?.token || ''}" placeholder="ghp_xxxxxxxxxxxx">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Update Channel</label>
+              <select class="form-input form-select" id="ghChannel">
+                <option value="stable" ${(state.ghUpdateConfig?.channel || 'stable') === 'stable' ? 'selected' : ''}>Stable</option>
+                <option value="beta" ${state.ghUpdateConfig?.channel === 'beta' ? 'selected' : ''}>Beta (includes pre-releases)</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+            <span style="font-size:13px">Auto-check for updates</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="ghAutoCheck" ${state.ghUpdateConfig?.autoCheck !== false ? 'checked' : ''} onchange="saveGhUpdateConfig()">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div id="ghConfigStatus" style="font-size:11px;color:var(--muted);margin-top:8px;padding:6px 10px;background:var(--glass);border-radius:var(--radius-sm);display:${state.ghUpdateConfig?.owner && state.ghUpdateConfig?.repo ? 'block' : 'none'}">
+            <i data-lucide="check-circle" style="width:12px;height:12px;color:var(--success);vertical-align:-2px"></i>
+            Feed: <span style="font-family:var(--mono);font-size:11px">github.com/${state.ghUpdateConfig?.owner || ''}/${state.ghUpdateConfig?.repo || ''}</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button class="btn btn-primary btn-sm" onclick="saveGhUpdateConfig()"><i data-lucide="save" style="width:14px;height:14px"></i> Save Config</button>
+            <button class="btn btn-ghost btn-sm" onclick="checkForUpdates()"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Check Now</button>
+            ${state.ghUpdateConfig?.hasToken ? '<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="clearGhToken()"><i data-lucide="key" style="width:14px;height:14px"></i> Clear Token</button>' : ''}
+          </div>
+        </div>
+
+        <div class="settings-section glass-panel" style="padding:20px">
+          <h3><i data-lucide="info" style="width:18px;height:18px;color:var(--primary-light)"></i> About</h3>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--radius-sm)">
+            <span style="flex:1;font-size:13px;color:var(--muted)">CloudPhone Pro <span class="version-badge" id="settingsVersion">v${state.appVersion || '2.5.0'}</span></span>
+            <button class="btn btn-ghost btn-sm" onclick="checkForUpdates()"><i data-lucide="download" style="width:14px;height:14px"></i> Check for Updates</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // ==================== DIALPAD ACTIONS ====================
+    function pressKey(key) {
+      state.dialNumber += key;
+      updateDialDisplay();
+      playDtmfTone(key);
+      if (state.activeCall && api) {
+        api.sip.sendDTMF(state.activeCall.callId, key);
+      }
+    }
+
+    function updateDialDisplay() {
+      const el = document.getElementById('dialNumber');
+      if (el) el.textContent = state.dialNumber || '\u00A0';
+    }
+
+    function dialContact(ext) {
+      state.dialNumber = ext;
+      state.currentPage = 'dialpad';
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector('[data-page="dialpad"]').classList.add('active');
+      renderPage();
+      makeCall();
+    }
+
+    function sendInCallDtmf(digit) {
+      playDtmfTone(digit);
+      if (api && state.activeCall) {
+        api.sip.sendDTMF(state.activeCall.callId, digit);
+      }
+    }
+
+    // ==================== SIP ACTIONS ====================
+    async function sipRegister() {
+      const config = {
+        server: document.getElementById('sipServer')?.value || '',
+        port: document.getElementById('sipPort')?.value || '5060',
+        transport: document.getElementById('sipTransport')?.value || 'UDP',
+        username: document.getElementById('sipUsername')?.value || '',
+        password: document.getElementById('sipPassword')?.value || '',
+        displayName: document.getElementById('sipDisplayName')?.value || ''
+      };
+      if (!config.server || !config.username || !config.password) {
+        showToast('Please fill in server, username, and password', 'error');
+        return;
+      }
+      state.sipConfig = config;
+      await saveSipConfig();
+      try {
+        if (api) await api.sip.register(config);
+        showToast('Registering with ' + config.server + '...', 'info');
+      } catch (err) {
+        showToast('Registration error: ' + err.message, 'error');
+      }
+    }
+
+    async function sipUnregister() {
+      try {
+        if (api) await api.sip.unregister();
+        state.registered = false;
+        updateStatusBar();
+      } catch (err) {
+        showToast('Unregister error: ' + err.message, 'error');
+      }
+    }
+
+    async function saveSipConfig() {
+      const config = {
+        server: document.getElementById('sipServer')?.value || state.sipConfig.server,
+        port: document.getElementById('sipPort')?.value || state.sipConfig.port,
+        transport: document.getElementById('sipTransport')?.value || state.sipConfig.transport,
+        username: document.getElementById('sipUsername')?.value || state.sipConfig.username,
+        password: document.getElementById('sipPassword')?.value || state.sipConfig.password,
+        displayName: document.getElementById('sipDisplayName')?.value || state.sipConfig.displayName
+      };
+      state.sipConfig = config;
+      if (window.electronAPI?.store) {
+        const savedProfile = await window.electronAPI.store.saveProfile(config);
+        // CRITICAL: Set the saved profile as active so it persists across restarts
+        if (savedProfile && savedProfile.id) {
+          await window.electronAPI.store.setActiveProfile(savedProfile.id);
+          console.log('[Settings] Active profile set to:', savedProfile.id);
+        }
+      }
+      showToast('SIP configuration saved', 'success');
+    }
+
+    // ==================== CALL ACTIONS ====================
+    async function makeCall() {
+      if (!state.dialNumber) return;
+      if (!state.registered) {
+        showToast('Not registered. Please configure SIP settings first.', 'error');
+        return;
+      }
+      try {
+        const callId = await api.sip.call(state.dialNumber);
+        state.activeCall = { callId, target: state.dialNumber, state: 'trying' };
+        addCallHistory('outgoing', state.dialNumber, state.dialNumber);
+        showActiveCall(state.activeCall);
+      } catch (err) {
+        showToast('Call failed: ' + err.message, 'error');
+      }
+    }
+
+    function showActiveCall(data) {
+      try {
+        const overlay = document.getElementById('callOverlay');
+        if (overlay) overlay.classList.remove('hidden');
+        const incomingOverlay = document.getElementById('incomingOverlay');
+        if (incomingOverlay) incomingOverlay.classList.add('hidden');
+
+        const initial = (data.target || '?').charAt(0).toUpperCase();
+        const avatarEl = document.getElementById('callAvatar');
+        if (avatarEl) avatarEl.textContent = initial;
+
+        // Find contact name
+        const contact = state.contacts.find(c => c.ext === data.target);
+        const nameEl = document.getElementById('callTargetName');
+        if (nameEl) nameEl.textContent = contact?.name || data.target || 'Unknown';
+
+        if (data.state === 'trying' || data.state === 'ringing') {
+          const statusEl = document.getElementById('callStatusText');
+          if (statusEl) statusEl.textContent = data.state === 'ringing' ? 'Ringing...' : 'Connecting...';
+          const timerEl = document.getElementById('callTimer');
+          if (timerEl) timerEl.style.display = 'none';
+        } else {
+          const statusEl = document.getElementById('callStatusText');
+          if (statusEl) statusEl.textContent = 'In Call';
+          const timerEl = document.getElementById('callTimer');
+          if (timerEl) timerEl.style.display = 'block';
+          startCallTimer();
+          startAudioCapture(data.callId).catch(err => {
+            console.error('[Audio] startAudioCapture failed:', err);
+            showToast('Audio capture failed: ' + err.message, 'error');
+          });
+
+          // Show waveform
+          const wf = document.getElementById('callWaveform');
+          if (wf) {
+            wf.style.display = 'flex';
+            wf.innerHTML = Array.from({length: 12}, (_, i) =>
+              `<div class="wave-bar" style="--wave-height:${10 + Math.random() * 20}px;animation-delay:${i * 0.1}s"></div>`
+            ).join('');
+          }
+
+          // Auto-record if enabled
+          if (state.recordAllCalls && !state.recording) {
+            try { toggleRecording(); } catch(e) { console.warn('[Recording] Auto-record failed:', e); }
+          }
+        }
+      } catch (err) {
+        console.error('[UI] showActiveCall error:', err);
+        showToast('Error showing call UI', 'error');
+      }
+    }
+
+    function showIncomingCall(data) {
+      const overlay = document.getElementById('incomingOverlay');
+      overlay.classList.remove('hidden');
+      const contact = state.contacts.find(c => c.ext === data.callerNumber);
+      document.getElementById('incomingAvatar').textContent = (data.callerName || data.callerNumber || '?').charAt(0).toUpperCase();
+      document.getElementById('incomingName').textContent = contact?.name || data.callerName || data.callerNumber || 'Unknown';
+      addCallHistory('incoming', data.callerNumber, data.callerName || data.callerNumber);
+    }
+
+    async function answerCall() {
+      if (!state.incomingCall || !api) return;
+      try {
+        await api.sip.answer(state.incomingCall.callId);
+        state.activeCall = { callId: state.incomingCall.callId, target: state.incomingCall.callerNumber };
+        state.incomingCall = null;
+      } catch (err) {
+        showToast('Failed to answer: ' + err.message, 'error');
+      }
+    }
+
+    function declineCall() {
+      if (!state.incomingCall || !api) return;
+      api.sip.hangup(state.incomingCall.callId);
+      state.incomingCall = null;
+      document.getElementById('incomingOverlay').classList.add('hidden');
+      // Mark as missed
+      if (state.callHistory.length > 0 && state.callHistory[0].type === 'incoming') {
+        state.callHistory[0].type = 'missed';
+      }
+    }
+
+    async function endCall() {
+      if (!state.activeCall || !api) return;
+      try {
+        await api.sip.hangup(state.activeCall.callId);
+      } catch (err) { /* ignore */ }
+      endCallUI();
+    }
+
+    function endCallUI() {
+      if (state.recording) toggleRecording();
+      stopCallTimer();
+      stopAudioCapture();
+      state.activeCall = null;
+      state.incomingCall = null;
+      state.muted = false;
+      state.held = false;
+      state.showInCallDtmf = false;
+      document.getElementById('callOverlay').classList.add('hidden');
+      document.getElementById('incomingOverlay').classList.add('hidden');
+      const wf = document.getElementById('callWaveform');
+      if (wf) wf.style.display = 'none';
+      state.dialNumber = '';
+    }
+
+    // ==================== CALL TIMER ====================
+    function startCallTimer() {
+      state.callSeconds = 0;
+      updateTimerDisplay();
+      state.callTimer = setInterval(() => {
+        state.callSeconds++;
+        updateTimerDisplay();
+      }, 1000);
+    }
+
+    function stopCallTimer() {
+      if (state.callTimer) { clearInterval(state.callTimer); state.callTimer = null; }
+    }
+
+    function updateTimerDisplay() {
+      const el = document.getElementById('callTimer');
+      if (el) {
+        const m = Math.floor(state.callSeconds / 60).toString().padStart(2, '0');
+        const s = (state.callSeconds % 60).toString().padStart(2, '0');
+        el.textContent = `${m}:${s}`;
+      }
+    }
+
+    // ==================== CALL CONTROLS ====================
+    function toggleMute() {
+      state.muted = !state.muted;
+      const btn = document.getElementById('btnMute');
+      if (btn) btn.classList.toggle('active', state.muted);
+      if (api && state.activeCall) api.sip.setMute(state.activeCall.callId, state.muted);
+      showToast(state.muted ? 'Muted' : 'Unmuted', 'info');
+    }
+
+    function toggleHold() {
+      state.held = !state.held;
+      const btn = document.getElementById('btnHold');
+      if (btn) btn.classList.toggle('active', state.held);
+      if (api && state.activeCall) {
+        if (state.held) api.sip.hold(state.activeCall.callId);
+        else api.sip.unhold(state.activeCall.callId);
+      }
+      showToast(state.held ? 'Call on hold' : 'Call resumed', 'info');
+    }
+
+    function toggleInCallDtmf() {
+      state.showInCallDtmf = !state.showInCallDtmf;
+      const pad = document.getElementById('inCallDtmfPad');
+      const btn = document.getElementById('btnDtmf');
+      if (btn) btn.classList.toggle('active', state.showInCallDtmf);
+      if (pad) {
+        pad.style.display = state.showInCallDtmf ? 'block' : 'none';
+        if (state.showInCallDtmf && pad.querySelector('div').children.length === 0) {
+          const keys = '123456789*0#'.split('');
+          const grid = pad.querySelector('div');
+          keys.forEach(k => {
+            const b = document.createElement('button');
+            b.className = 'dial-key';
+            b.style.cssText = 'width:48px;height:48px;font-size:18px';
+            b.textContent = k;
+            b.onclick = () => sendInCallDtmf(k);
+            grid.appendChild(b);
+          });
+        }
+      }
+    }
+
+    // ==================== RECORDING ====================
+    async function toggleRecording() {
+      if (!state.activeCall) return;
+      state.recording = !state.recording;
+      const btn = document.getElementById('btnRecord');
+      const indicator = document.getElementById('recordingIndicator');
+
+      if (state.recording) {
+        btn?.classList.add('recording-active');
+        if (indicator) indicator.style.display = 'block';
+        state.recordingStartTime = Date.now();
+        state.recordingTimer = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - state.recordingStartTime) / 1000);
+          const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+          const s = (elapsed % 60).toString().padStart(2, '0');
+          const durEl = document.getElementById('recordingDuration');
+          if (durEl) durEl.textContent = `${m}:${s}`;
+        }, 1000);
+        if (api?.recording) {
+          await api.recording.start(state.activeCall.callId, { target: state.activeCall.target });
+        }
+        showToast('Recording started', 'info');
+      } else {
+        btn?.classList.remove('recording-active');
+        if (indicator) indicator.style.display = 'none';
+        if (state.recordingTimer) { clearInterval(state.recordingTimer); state.recordingTimer = null; }
+        if (api?.recording) {
+          const result = await api.recording.stop(state.activeCall.callId);
+          if (result) showToast(`Recording saved: ${result.durationFormatted || ''}`, 'success');
+        }
+      }
+    }
+
+    async function toggleAutoRecord(enabled) {
+      state.recordAllCalls = enabled;
+      if (api?.audio) await api.audio.setRecordCallsSetting(enabled);
+      showToast(enabled ? 'Auto-recording enabled' : 'Auto-recording disabled', 'info');
+    }
+
+    // ==================== TRANSFER & CONFERENCE ====================
+    function showTransferModal() {
+      document.getElementById('transferModal').classList.remove('hidden');
+      document.getElementById('transferTarget').value = '';
+      document.getElementById('transferTarget').focus();
+      renderTransferContacts();
+    }
+
+    function closeTransferModal() {
+      document.getElementById('transferModal').classList.add('hidden');
+    }
+
+    function setTransferType(type) {
+      state.transferType = type;
+      document.querySelectorAll('#transferModal .tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    function renderTransferContacts() {
+      const list = document.getElementById('transferContactsList');
+      if (!list) return;
+      const recent = state.callHistory.slice(0, 5);
+      const contacts = state.contacts.slice(0, 10);
+      list.innerHTML = `
+        ${recent.length > 0 ? `<div style="font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Recent</div>` : ''}
+        ${recent.map(h => `
+          <div class="contact-item" style="padding:6px 8px" onclick="document.getElementById('transferTarget').value='${h.ext}';">
+            <div class="contact-avatar" style="width:28px;height:28px;font-size:12px">${h.name.charAt(0)}</div>
+            <div class="contact-info"><div style="font-size:12px">${h.name}</div><div style="font-size:11px;color:var(--muted)">${h.ext}</div></div>
+          </div>
+        `).join('')}
+        ${contacts.length > 0 ? `<div style="font-size:11px;color:var(--muted);margin:8px 0 4px;text-transform:uppercase;letter-spacing:1px">Contacts</div>` : ''}
+        ${contacts.map(c => `
+          <div class="contact-item" style="padding:6px 8px" onclick="document.getElementById('transferTarget').value='${c.ext}';">
+            <div class="contact-avatar" style="width:28px;height:28px;font-size:12px">${c.name.charAt(0)}</div>
+            <div class="contact-info"><div style="font-size:12px">${c.name}</div><div style="font-size:11px;color:var(--muted)">${c.ext}</div></div>
+          </div>
+        `).join('')}
+      `;
+    }
+
+    async function executeTransfer() {
+      const target = document.getElementById('transferTarget')?.value;
+      if (!target || !state.activeCall || !api) {
+        showToast('Enter a transfer target', 'error');
+        return;
+      }
+      try {
+        await api.sip.transfer(state.activeCall.callId, target);
+        showToast(`Call transferred to ${target} (${state.transferType})`, 'success');
+        closeTransferModal();
+      } catch (err) {
+        showToast('Transfer failed: ' + err.message, 'error');
+      }
+    }
+
+    function showConferenceModal() {
+      document.getElementById('conferenceModal').classList.remove('hidden');
+      document.getElementById('conferenceTarget').value = '';
+      document.getElementById('conferenceTarget').focus();
+    }
+
+    function closeConferenceModal() {
+      document.getElementById('conferenceModal').classList.add('hidden');
+    }
+
+    function addToConference() {
+      const target = document.getElementById('conferenceTarget')?.value;
+      if (!target) { showToast('Enter an extension to add', 'error'); return; }
+      showToast(`Conference: Adding ${target} (feature requires PBX support)`, 'warning');
+      closeConferenceModal();
+    }
+
+    function parkCall() {
+      if (!state.activeCall) return;
+      showToast('Call parking (feature requires PBX support, use *70)', 'warning');
+    }
+
+    // ==================== CONTACTS MANAGEMENT ====================
+    function openAddContactModal() {
+      state.editingContactId = null;
+      document.getElementById('contactModalTitle').textContent = 'Add Contact';
+      document.getElementById('contactName').value = '';
+      document.getElementById('contactExt').value = '';
+      document.getElementById('contactCompany').value = '';
+      document.getElementById('contactEmail').value = '';
+      document.getElementById('contactNotes').value = '';
+      document.getElementById('contactSpeedDial').checked = false;
+      document.getElementById('contactModal').classList.remove('hidden');
+      document.getElementById('contactName').focus();
+    }
+
+    function editContact(id) {
+      const contact = state.contacts.find(c => c.id === id);
+      if (!contact) return;
+      state.editingContactId = id;
+      document.getElementById('contactModalTitle').textContent = 'Edit Contact';
+      document.getElementById('contactName').value = contact.name || '';
+      document.getElementById('contactExt').value = contact.ext || '';
+      document.getElementById('contactCompany').value = contact.company || '';
+      document.getElementById('contactEmail').value = contact.email || '';
+      document.getElementById('contactNotes').value = contact.notes || '';
+      document.getElementById('contactSpeedDial').checked = !!contact.speedDial;
+      document.getElementById('contactModal').classList.remove('hidden');
+    }
+
+    function closeContactModal() {
+      document.getElementById('contactModal').classList.add('hidden');
+      state.editingContactId = null;
+    }
+
+    async function saveContactFromModal() {
+      const name = document.getElementById('contactName')?.value?.trim();
+      const ext = document.getElementById('contactExt')?.value?.trim();
+      if (!name || !ext) { showToast('Name and extension are required', 'error'); return; }
+
+      const contactData = {
+        name, ext,
+        company: document.getElementById('contactCompany')?.value?.trim() || '',
+        email: document.getElementById('contactEmail')?.value?.trim() || '',
+        notes: document.getElementById('contactNotes')?.value?.trim() || '',
+        speedDial: document.getElementById('contactSpeedDial')?.checked || false,
+        status: 'offline'
+      };
+
+      if (state.editingContactId) {
+        const idx = state.contacts.findIndex(c => c.id === state.editingContactId);
+        if (idx >= 0) {
+          state.contacts[idx] = { ...state.contacts[idx], ...contactData };
+        }
+      } else {
+        contactData.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        state.contacts.push(contactData);
+      }
+
+      if (window.electronAPI?.store) await window.electronAPI.store.saveContacts(state.contacts);
+      closeContactModal();
+      renderPage();
+      showToast(state.editingContactId ? 'Contact updated' : 'Contact added', 'success');
+    }
+
+    async function deleteContact(id) {
+      if (!confirm('Delete this contact?')) return;
+      state.contacts = state.contacts.filter(c => c.id !== id);
+      if (window.electronAPI?.store) await window.electronAPI.store.saveContacts(state.contacts);
+      renderPage();
+      showToast('Contact deleted', 'success');
+    }
+
+    // ==================== CALL HISTORY ====================
+    function addCallHistory(type, ext, name) {
+      const entry = {
+        type, ext, name: name || ext,
+        timestamp: Date.now(),
+        duration: null
+      };
+      state.callHistory.unshift(entry);
+      if (state.callHistory.length > 100) state.callHistory.pop();
+      if (window.electronAPI?.store) window.electronAPI.store.saveCallHistory(state.callHistory);
+    }
+
+    function formatTimestamp(ts) {
+      const d = new Date(ts);
+      const now = new Date();
+      const diff = now - d;
+      if (diff < 60000) return 'Just now';
+      if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+      if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+      return d.toLocaleDateString();
+    }
+
+    // ==================== AUDIO DEVICE MANAGEMENT ====================
+    async function refreshAudioDevices() {
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()));
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        state.audioDevices.inputs = devices.filter(d => d.kind === 'audioinput');
+        state.audioDevices.outputs = devices.filter(d => d.kind === 'audiooutput');
+        if (state.currentPage === 'settings') renderPage();
+      } catch (err) {
+        console.warn('[Audio] Device enumeration failed:', err);
+      }
+    }
+
+    async function saveAudioSettings() {
+      state.audioSettings = {
+        inputDevice: document.getElementById('audioInputDevice')?.value || 'default',
+        outputDevice: document.getElementById('audioOutputDevice')?.value || 'default',
+        ringtoneDevice: document.getElementById('audioRingtoneDevice')?.value || 'default',
+        inputVolume: parseInt(document.getElementById('audioInputVolume')?.value || 80),
+        outputVolume: parseInt(document.getElementById('audioOutputVolume')?.value || 80),
+        echoCancellation: document.getElementById('audioEchoCancellation')?.checked ?? true,
+        noiseSuppression: document.getElementById('audioNoiseSuppression')?.checked ?? true,
+        autoGainControl: document.getElementById('audioAutoGainControl')?.checked ?? true
+      };
+      const inputLabel = document.getElementById('inputVolLabel');
+      const outputLabel = document.getElementById('outputVolLabel');
+      if (inputLabel) inputLabel.textContent = state.audioSettings.inputVolume + '%';
+      if (outputLabel) outputLabel.textContent = state.audioSettings.outputVolume + '%';
+      if (window.electronAPI?.audio) {
+        await window.electronAPI.audio.saveSettings(state.audioSettings);
+      }
+    }
+
+    async function testMicrophone() {
+      showToast('Testing microphone for 3 seconds...', 'info');
+      try {
+        const constraints = { audio: { deviceId: state.audioSettings.inputDevice !== 'default' ? { exact: state.audioSettings.inputDevice } : undefined } };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const ctx = new AudioContext();
+        const src = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        src.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        let maxLevel = 0;
+        const check = setInterval(() => {
+          analyser.getByteFrequencyData(data);
+          const avg = data.reduce((a, b) => a + b, 0) / data.length;
+          maxLevel = Math.max(maxLevel, avg);
+        }, 100);
+        setTimeout(() => {
+          clearInterval(check);
+          stream.getTracks().forEach(t => t.stop());
+          ctx.close();
+          const level = Math.min(100, Math.round(maxLevel * 100 / 128));
+          showToast(`Mic test complete. Level: ${level}% ${level > 10 ? '(Working)' : '(Low/No signal)'}`, level > 10 ? 'success' : 'warning');
+        }, 3000);
+      } catch (err) {
+        showToast('Mic test failed: ' + err.message, 'error');
+      }
+    }
+
+    function testSpeaker() {
+      showToast('Playing test tone...', 'info');
+      try {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = 440;
+        osc.type = 'sine';
+        gain.gain.value = 0.3;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1);
+        osc.stop(ctx.currentTime + 1);
+        setTimeout(() => ctx.close(), 1500);
+      } catch (err) {
+        showToast('Speaker test failed: ' + err.message, 'error');
+      }
+    }
+
+    // ==================== RECORDINGS MANAGEMENT ====================
+    async function loadRecordingsList() {
+      if (api?.recording) {
+        state.recordingsList = await api.recording.list() || [];
+        if (state.currentPage === 'recordings') renderPage();
+      }
+    }
+
+    function playRecording(index) {
+      const rec = state.recordingsList[index];
+      if (!rec) return;
+      const container = document.getElementById('audioPlayerContainer');
+      const player = document.getElementById('recordingPlayer');
+      const nameEl = document.getElementById('playerFileName');
+      if (container && player && nameEl) {
+        container.style.display = 'block';
+        nameEl.textContent = rec.fileName;
+        player.src = 'file://' + rec.filePath;
+        player.play();
+      }
+    }
+
+    function stopPlayback() {
+      const player = document.getElementById('recordingPlayer');
+      const container = document.getElementById('audioPlayerContainer');
+      if (player) { player.pause(); player.src = ''; }
+      if (container) container.style.display = 'none';
+    }
+
+    async function deleteRecording(fileName) {
+      if (!confirm('Delete this recording?')) return;
+      if (api?.recording) {
+        await api.recording.delete(fileName);
+        await loadRecordingsList();
+        showToast('Recording deleted', 'success');
+      }
+    }
+
+    async function openRecordingsFolder() {
+      if (api?.recording) api.recording.openFolder();
+    }
+
+    // ==================== APP SETTINGS ====================
+    async function toggleAppSetting(key, value) {
+      state.appSettings[key] = value;
+      if (window.electronAPI?.store) {
+        await window.electronAPI.store.set('appSettings', state.appSettings);
+      }
+    }
+
+    async function toggleStartupSetting(enabled) {
+      if (!window.electronAPI?.app) { showToast('Not available outside Electron', 'warning'); return; }
+      try {
+        const result = await window.electronAPI.app.setStartupEnabled(enabled);
+        if (result) {
+          state.launchOnStartup = enabled;
+          showToast(enabled ? 'CloudPhone Pro will launch on Windows startup' : 'Startup launch disabled', 'success');
+        } else {
+          showToast('Failed to update startup setting', 'error');
+          // Revert checkbox
+          const cb = document.getElementById('startupToggle');
+          if (cb) cb.checked = !enabled;
+        }
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
+    }
+
+    async function toggleAlwaysOnTop(enabled) {
+      if (!window.electronAPI?.app) { showToast('Not available outside Electron', 'warning'); return; }
+      try {
+        await window.electronAPI.app.setAlwaysOnTop(enabled);
+        state.alwaysOnTop = enabled;
+        showToast(enabled ? 'Window will stay on top' : 'Always on top disabled', 'success');
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
+    }
+
+    // ==================== STATUS BAR ====================
+    function updateStatusBar() {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      const transport = document.getElementById('statusTransport');
+      const server = document.getElementById('statusServer');
+      if (state.registered) {
+        dot.className = 'status-dot green';
+        text.textContent = 'Registered';
+        transport.textContent = 'Transport: ' + state.sipConfig.transport;
+        server.textContent = state.sipConfig.username + '@' + state.sipConfig.server;
+      } else {
+        dot.className = 'status-dot red';
+        text.textContent = 'Disconnected';
+        transport.textContent = 'Transport: —';
+        server.textContent = state.sipConfig.server ? 'Disconnected from ' + state.sipConfig.server : 'No server configured';
+      }
+    }
+
+    // ==================== TOAST NOTIFICATIONS ====================
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      const icons = { success: 'check-circle', error: 'alert-circle', warning: 'alert-triangle', info: 'info' };
+      toast.innerHTML = `<i data-lucide="${icons[type] || 'info'}" style="width:16px;height:16px;flex-shrink:0"></i>${message}`;
+      container.appendChild(toast);
+      lucide.createIcons({ nodes: [toast] });
+      setTimeout(() => toast.remove(), 4000);
+    }
+
+    // ==================== AUTO-UPDATE ====================
+    function checkForUpdates() {
+      if (api?.update) {
+        api.update.check().then(result => {
+          if (result && !result.success) {
+            showToast(result.error || 'Update check failed', 'error');
+          }
+        });
+        showToast('Checking for updates...', 'info');
+      } else {
+        showToast('Auto-update not available in dev mode', 'warning');
+      }
+    }
+
+    async function saveGhUpdateConfig() {
+      if (!api?.update?.setConfig) {
+        showToast('Update configuration not available', 'warning');
+        return;
+      }
+      const config = {
+        owner: document.getElementById('ghOwner')?.value || '',
+        repo: document.getElementById('ghRepo')?.value || '',
+        token: document.getElementById('ghToken')?.value || '',
+        channel: document.getElementById('ghChannel')?.value || 'stable',
+        autoCheck: document.getElementById('ghAutoCheck')?.checked !== false
+      };
+      if (!config.owner || !config.repo) {
+        showToast('Please enter both GitHub owner and repository name', 'error');
+        return;
+      }
+      try {
+        const result = await api.update.setConfig(config);
+        state.ghUpdateConfig = { ...state.ghUpdateConfig, ...config, hasToken: !!config.token && config.token !== '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' ? true : state.ghUpdateConfig?.hasToken };
+        showToast(`Update feed configured: github.com/${config.owner}/${config.repo}`, 'success');
+        renderPage();
+      } catch (err) {
+        showToast('Failed to save update config: ' + err.message, 'error');
+      }
+    }
+
+    async function clearGhToken() {
+      if (!api?.update?.clearToken) return;
+      try {
+        await api.update.clearToken();
+        state.ghUpdateConfig = { ...state.ghUpdateConfig, token: '', hasToken: false };
+        showToast('GitHub token cleared', 'info');
+        renderPage();
+      } catch (err) {
+        showToast('Failed to clear token: ' + err.message, 'error');
+      }
+    }
+
+    async function loadGhUpdateConfig() {
+      if (!api?.update?.getConfig) return;
+      try {
+        state.ghUpdateConfig = await api.update.getConfig();
+      } catch (err) {
+        console.warn('[Settings] Failed to load GitHub update config:', err);
+        state.ghUpdateConfig = { owner: '', repo: '', token: '', hasToken: false, autoCheck: true, channel: 'stable' };
+      }
+    }
+
+    function dismissUpdate() {
+      const banner = document.getElementById('updateBanner');
+      banner.classList.remove('visible');
+    }
+
+    if (api?.update) {
+      let updateDismissTimer = null;
+      api.update.onEvent((data) => {
+        const banner = document.getElementById('updateBanner');
+        const text = document.getElementById('updateText');
+        const progress = document.getElementById('updateProgress');
+        const progressBar = document.getElementById('updateProgressBar');
+        const actionBtn = document.getElementById('updateAction');
+
+        if (updateDismissTimer) { clearTimeout(updateDismissTimer); updateDismissTimer = null; }
+
+        banner.className = 'update-banner visible ' + data.status;
+        progress.style.display = 'none';
+        actionBtn.style.display = 'none';
+
+        switch (data.status) {
+          case 'checking':
+            text.textContent = 'Checking for updates...';
+            // Auto-dismiss after 5s
+            updateDismissTimer = setTimeout(() => { banner.classList.remove('visible'); }, 5000);
+            break;
+          case 'not-available':
+            text.textContent = 'You are running the latest version.';
+            banner.className = 'update-banner visible checking';
+            updateDismissTimer = setTimeout(() => { banner.classList.remove('visible'); }, 4000);
+            break;
+          case 'available':
+            text.innerHTML = `Update available: <span class="update-version">${data.version || ''}</span>`;
+            break;
+          case 'downloading':
+            text.textContent = `Downloading update... ${data.percent ? Math.round(data.percent) + '%' : ''}`;
+            progress.style.display = 'block';
+            progressBar.style.width = (data.percent || 0) + '%';
+            break;
+          case 'ready':
+            text.textContent = 'Update ready to install';
+            actionBtn.style.display = 'inline-block';
+            actionBtn.textContent = 'Restart & Install';
+            actionBtn.onclick = () => api.update.install();
+            break;
+          case 'error':
+            text.textContent = 'Update check failed: ' + (data.message || 'Unknown');
+            // Auto-dismiss errors after 6s
+            updateDismissTimer = setTimeout(() => { banner.classList.remove('visible'); }, 6000);
+            break;
+        }
+      });
+    }
+
+    // ==================== MULTI-LINE MANAGEMENT ====================
+    async function addNewLine() {
+      const server = prompt('SIP Server (IP or hostname):');
+      if (!server) return;
+      const username = prompt('Extension / Username:');
+      if (!username) return;
+      const password = prompt('Password:');
+      const port = prompt('Port (default 5060):', '5060') || '5060';
+      const label = prompt('Line Label (optional):', 'Line ' + (state.lines.length + 2)) || 'Line ' + (state.lines.length + 2);
+
+      const lineId = 'line_' + Date.now();
+      const config = { server, port, transport: 'UDP', username, password: password || '', displayName: label };
+
+      if (api?.line) {
+        try {
+          const result = await api.line.register(lineId, config);
+          if (result.success) {
+            state.lines.push({ id: lineId, label, config, registered: false });
+            showToast('Line added: ' + label + '. Registering...', 'info');
+            renderPage();
+          } else {
+            showToast('Failed to add line: ' + result.error, 'error');
+          }
+        } catch (err) {
+          showToast('Error adding line: ' + err.message, 'error');
+        }
+      }
+    }
+
+    async function removeLine(lineId) {
+      if (!confirm('Remove this line and unregister?')) return;
+      if (api?.line) {
+        await api.line.unregister(lineId);
+      }
+      state.lines = state.lines.filter(l => l.id !== lineId);
+      if (state.activeLineId === lineId) state.activeLineId = null;
+      showToast('Line removed', 'info');
+      renderPage();
+    }
+
+    async function setActiveLine(lineId) {
+      if (api?.line) {
+        await api.line.setActive(lineId);
+      }
+      state.activeLineId = lineId;
+      showToast('Active line changed', 'success');
+      renderPage();
+    }
+
+    async function refreshLines() {
+      if (api?.line) {
+        try {
+          const lines = await api.line.getAll();
+          if (lines) {
+            state.lines = lines;
+            const active = await api.line.getActive();
+            state.activeLineId = active;
+          }
+          renderPage();
+          showToast('Line status refreshed', 'info');
+        } catch (err) {
+          showToast('Failed to refresh lines', 'error');
+        }
+      }
+    }
+
+    // Listen for line status changes from main process
+    if (api?.line) {
+      api.line.onStatusChanged((data) => {
+        const line = state.lines.find(l => l.id === data.lineId);
+        if (line) {
+          line.registered = data.registered;
+          if (state.currentPage === 'settings') renderPage();
+        }
+      });
+      api.line.onActiveChanged((data) => {
+        state.activeLineId = data.lineId;
+      });
+    }
+
+    // ==================== NATIVE NOTIFICATIONS ====================
+    async function toggleNativeNotifications(enabled) {
+      state.nativeNotifications = enabled;
+      if (api?.notification) {
+        await api.notification.setEnabled(enabled);
+      }
+      showToast(enabled ? 'Native notifications enabled' : 'Native notifications disabled', 'info');
+    }
+
+    // Send native notification for incoming calls
+    function sendIncomingCallNotification(callData) {
+      if (!state.nativeNotifications || !state.appSettings.showNotifications) return;
+      if (api?.notification) {
+        api.notification.show(
+          'Incoming Call',
+          callData.callerName || callData.callerId || callData.from || 'Unknown',
+          { type: 'incoming_call', callId: callData.callId }
+        );
+      }
+    }
+
+    function sendMissedCallNotification(callData) {
+      if (!state.nativeNotifications || !state.appSettings.showNotifications) return;
+      if (api?.notification) {
+        api.notification.showMissedCall({
+          caller: callData.callerName || callData.callerId || callData.from || 'Unknown',
+          time: new Date().toLocaleTimeString()
+        });
+      }
+    }
+
+    // ==================== CRM PROTOCOL HANDLER ====================
+    async function registerProtocols() {
+      if (api?.protocol) {
+        try {
+          const result = await api.protocol.register();
+          if (result.success) {
+            state.protocolStatus = { tel: true, sip: true, callto: true };
+            showToast('Registered as default handler for tel:, sip:, callto: links', 'success');
+            const statusEl = document.getElementById('protocolStatus');
+            if (statusEl) statusEl.textContent = 'Status: Registered';
+          } else {
+            showToast('Protocol registration failed: ' + (result.error || 'Unknown'), 'error');
+          }
+        } catch (err) {
+          showToast('Protocol registration error: ' + err.message, 'error');
+        }
+      } else {
+        showToast('Protocol handler not available', 'warning');
+      }
+    }
+
+    // Listen for protocol dial events (click-to-call from browser/CRM)
+    if (api?.protocol) {
+      api.protocol.onDial((data) => {
+        console.log('[Protocol] Dial request:', data);
+        const number = data.number || data.uri;
+        if (number) {
+          state.dialNumber = number;
+          navigateTo('dialpad');
+          updateDialDisplay();
+          showToast('Click-to-call: ' + number, 'info');
+          // Auto-dial if registered
+          if (state.registered) {
+            setTimeout(() => makeCall(), 500);
+          }
+        }
+      });
+    }
+
+    // Listen for navigation events from main process (e.g., tray menu)
+    if (api?.onNavigate) {
+      api.onNavigate((page) => {
+        navigateTo(page);
+      });
+    }
+
+    // ==================== QUEUE STATE LISTENER ====================
+    if (api?.queue) {
+      api.queue.onStateChanged((data) => {
+        state.queueState = { ...state.queueState, ...data };
+        if (state.currentPage === 'queue') renderPage();
+      });
+    }
+
+    // ==================== SIP DEBUG CONSOLE ====================
+    let debugConsoleVisible = false;
+    let debugMessages = [];
+    const MAX_DEBUG_MESSAGES = 500;
+
+    function toggleDebugConsole() {
+      debugConsoleVisible = !debugConsoleVisible;
+      const panel = document.getElementById('sipDebugConsole');
+      if (panel) {
+        panel.style.display = debugConsoleVisible ? 'block' : 'none';
+      }
+      // Re-create lucide icons in the panel
+      if (debugConsoleVisible) {
+        try { lucide.createIcons({ nodes: [panel] }); } catch(e) {}
+      }
+    }
+
+    function clearDebugConsole() {
+      debugMessages = [];
+      const logArea = document.getElementById('debugLogArea');
+      if (logArea) logArea.innerHTML = '';
+      const countEl = document.getElementById('debugMsgCount');
+      if (countEl) countEl.textContent = '0 messages';
+    }
+
+    function addDebugMessage(data) {
+      const time = new Date(data.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+      const dirColor = data.direction === 'TX' ? '#58a6ff' : '#3fb950';
+      const lineText = data.line ? data.line.substring(3) : '';
+      const lineHtml = `<div style="margin:1px 0;"><span style="color:#484f58;">${time}</span> <span style="color:${dirColor};font-weight:600;">${data.direction}</span> <span style="color:#c9d1d9;">${escapeHtml(lineText)}</span>${data.lineId ? ` <span style="color:#8b949e;">[${data.lineId}]</span>` : ''}</div>`;
+      debugMessages.push(lineHtml);
+      if (debugMessages.length > MAX_DEBUG_MESSAGES) {
+        debugMessages.shift();
+      }
+      const logArea = document.getElementById('debugLogArea');
+      if (logArea && debugConsoleVisible) {
+        // Use insertAdjacentHTML instead of innerHTML += to avoid re-parsing entire DOM
+        logArea.insertAdjacentHTML('beforeend', lineHtml);
+        // Trim old entries from DOM if too many
+        while (logArea.children.length > MAX_DEBUG_MESSAGES) {
+          logArea.removeChild(logArea.firstChild);
+        }
+        logArea.scrollTop = logArea.scrollHeight;
+      }
+      const countEl = document.getElementById('debugMsgCount');
+      if (countEl) countEl.textContent = debugMessages.length + ' messages';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Listen for SIP debug messages from main process
+    if (window.electronAPI?.sipDebug) {
+      window.electronAPI.sipDebug.onMessage((data) => {
+        addDebugMessage(data);
+      });
+    }
+
+    // ==================== INIT ====================
+    async function init() {
+      await loadPersistedSettings();
+
+      // Load queue settings
+      if (api?.queue) {
+        try {
+          const qSettings = await api.queue.getSettings();
+          if (qSettings) state.queueSettings = qSettings;
+          const qState = await api.queue.getState();
+          if (qState) state.queueState = { ...state.queueState, ...qState };
+        } catch (e) { /* ignore */ }
+      }
+
+      // Load notification preference
+      if (api?.notification) {
+        try {
+          const enabled = await api.notification.getEnabled();
+          state.nativeNotifications = enabled !== false;
+        } catch (e) { /* ignore */ }
+      }
+
+      // Check protocol handler status
+      if (api?.protocol) {
+        try {
+          const status = await api.protocol.isRegistered();
+          state.protocolStatus = status || { tel: false, sip: false, callto: false };
+        } catch (e) { /* ignore */ }
+      }
+
+      // Load multi-line state
+      if (api?.line) {
+        try {
+          const lines = await api.line.getAll();
+          if (lines) state.lines = lines;
+          const active = await api.line.getActive();
+          if (active) state.activeLineId = active;
+        } catch (e) { /* ignore */ }
+      }
+
+      // Load app version from Electron
+      if (api?.update) {
+        try {
+          const version = await api.update.getVersion();
+          if (version) state.appVersion = version;
+        } catch (e) { /* ignore */ }
+      }
+
+      renderPage();
+      lucide.createIcons();
+      updateStatusBar();
+      console.log('[CloudPhone Pro] Initialized v' + state.appVersion);
+
+      // ===== AUTO-REGISTER on startup if saved SIP credentials exist =====
+      await autoRegisterOnStartup();
+    }
+
+    async function autoRegisterOnStartup() {
+      try {
+        const config = state.sipConfig;
+        if (!config.server || !config.username || !config.password) {
+          console.log('[Auto-Register] No saved SIP credentials, skipping auto-register');
+          return;
+        }
+        console.log('[Auto-Register] Found saved credentials for', config.username + '@' + config.server);
+        showToast('Auto-registering with ' + config.server + '...', 'info');
+        if (api?.sip) {
+          await api.sip.register(config);
+          console.log('[Auto-Register] Registration request sent');
+        }
+      } catch (err) {
+        console.error('[Auto-Register] Failed:', err);
+        showToast('Auto-register failed: ' + (err.message || 'Unknown error'), 'error');
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+{
+  "name": "cloudphone-pro",
+  "version": "2.5.0",
+  "description": "CloudPhone Pro - Professional VoIP Softphone for Windows",
+  "main": "main.js",
+  "author": "CloudPhone Pro",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win",
+    "dist:nsis": "electron-builder --win --x64 -c.win.target=nsis",
+    "release": "electron-builder --win --publish always",
+    "release:patch": "npm version patch --no-git-tag-version && npm run release",
+    "release:minor": "npm version minor --no-git-tag-version && npm run release",
+    "release:major": "npm version major --no-git-tag-version && npm run release",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version"
+  },
+  "dependencies": {
+    "auto-launch": "^5.0.6",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.3",
+    "sip": "^0.0.6",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.cloudphone.pro",
+    "productName": "CloudPhone Pro",
+    "copyright": "Copyright © 2026 CloudPhone Pro",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "${GH_OWNER:-cloudphone}",
+        "repo": "${GH_REPO:-cloudphone-pro}",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "publisherName": "CloudPhone Pro",
+      "fileAssociations": [],
+      "protocols": [
+        {
+          "name": "Tel Protocol",
+          "schemes": [
+            "tel"
+          ]
+        },
+        {
+          "name": "SIP Protocol",
+          "schemes": [
+            "sip"
+          ]
+        },
+        {
+          "name": "CallTo Protocol",
+          "schemes": [
+            "callto"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "allowElevation": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "CloudPhone Pro",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "installerSidebar": null,
+      "license": null,
+      "perMachine": true,
+      "differentialPackage": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "sip-engine.js",
+      "rtp-engine.js",
+      "call-recorder.js",
+      "renderer-dist/**/*",
+      "assets/**/*",
+      "!node_modules/.cache/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "asar": true,
+    "compression": "maximum"
+  }
+}
