@@ -315,6 +315,12 @@ autoUpdater.autoRunAppAfterInstall = true;
 autoUpdater.allowPrerelease = false;
 autoUpdater.allowDowngrade = false;
 
+// CRITICAL: Skip code signature verification for unsigned builds
+// Without this, electron-updater rejects the downloaded .exe because it's not code-signed
+autoUpdater.verifyUpdateCodeSignature = false;
+// Also disable the forceDevUpdateConfig check (not in dev mode, but just in case)
+autoUpdater.forceDevUpdateConfig = false;
+
 
 autoUpdater.logger = {
   info: (msg) => console.log('[AutoUpdate]', msg),
