@@ -2371,7 +2371,14 @@
         return;
       }
       try {
-        const callId = await api.sip.call(state.dialNumber);
+        const result = await api.sip.call(state.dialNumber);
+        console.log('[Call] sip.call result:', JSON.stringify(result));
+        // IPC returns { success, callId, lineId } — extract the actual callId string
+        const callId = (result && typeof result === 'object') ? result.callId : result;
+        if (!callId || (result && result.success === false)) {
+          showToast('Call failed: ' + (result?.error || 'No call ID returned'), 'error');
+          return;
+        }
         state.activeCall = { callId, target: state.dialNumber, state: 'trying' };
         addCallHistory('outgoing', state.dialNumber, state.dialNumber);
         showActiveCall(state.activeCall);

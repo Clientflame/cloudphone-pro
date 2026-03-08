@@ -510,12 +510,41 @@ function createWindow() {
   // ===== Renderer Crash Recovery =====
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     console.error('[CRASH] Renderer process gone:', details.reason, details.exitCode);
-    // Reload the renderer instead of leaving a blank window
+    // DO NOT hang up active calls — the SIP engine runs in the main process
+    // and the call is still alive even though the renderer crashed.
+    // Reload the renderer and let it reconnect to the active call.
     if (mainWindow && !mainWindow.isDestroyed()) {
-      console.log('[CRASH] Reloading renderer...');
+      console.log('[CRASH] Reloading renderer (active SIP calls preserved)...');
+      // Check if there are active calls we need to restore
+      const activeCalls = [];
+      for (const [lineId, line] of sipLines.entries()) {
+        if (line.engine) {
+          for (const [callId, call] of line.engine.calls.entries()) {
+            if (call.state === 'established' || call.state === 'trying' || call.state === 'ringing') {
+              activeCalls.push({ callId, target: call.target, state: call.state, lineId });
+            }
+          }
+        }
+      }
+      console.log('[CRASH] Active calls to restore:', activeCalls.length);
       setTimeout(() => {
         try {
           mainWindow.loadFile(rendererPath);
+          // After the renderer reloads, send it the active call info
+          if (activeCalls.length > 0) {
+            mainWindow.webContents.once('did-finish-load', () => {
+              setTimeout(() => {
+                for (const call of activeCalls) {
+                  console.log('[CRASH] Restoring call to renderer:', call.callId);
+                  mainWindow.webContents.send('sip:event', {
+                    type: 'callEstablished',
+                    data: call,
+                    lineId: call.lineId
+                  });
+                }
+              }, 2000); // Give renderer 2s to initialize before sending call state
+            });
+          }
         } catch (e) {
           console.error('[CRASH] Failed to reload:', e);
         }
@@ -1361,6 +1390,13 @@ ipcMain.handle('app:setAlwaysOnTop', (event, enabled) => {
 });
 
 // ========== App Lifecycle ==========
+
+// Prevent renderer crashes from GPU process issues
+// The ScriptProcessor + AudioContext can trigger GPU process crashes on some systems
+app.commandLine.appendSwitch('disable-gpu-sandbox');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+// Reduce renderer memory pressure
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
 
 app.whenReady().then(async () => {
   registerProtocolHandlers();
