@@ -452,6 +452,26 @@ function createWindow() {
     }
   });
 
+  // ===== Media Permission Handlers =====
+  // Auto-grant microphone and camera permissions for VoIP calls
+  // Without this, getUserMedia() silently fails or crashes the renderer
+  const { session } = require('electron');
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowedPermissions = ['media', 'microphone', 'audioCapture', 'mediaKeySystem'];
+    if (allowedPermissions.includes(permission)) {
+      console.log(`[PERMISSION] Granted: ${permission}`);
+      callback(true);
+    } else {
+      console.log(`[PERMISSION] Denied: ${permission}`);
+      callback(false);
+    }
+  });
+
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    const allowedPermissions = ['media', 'microphone', 'audioCapture', 'mediaKeySystem'];
+    return allowedPermissions.includes(permission);
+  });
+
   const rendererPath = path.join(__dirname, 'renderer-dist', 'index.html');
   mainWindow.loadFile(rendererPath);
 
@@ -809,7 +829,14 @@ function setupLineEvents(lineId, engine) {
     mainWindow?.webContents.send('sip:event', { type: 'error', data, lineId });
   });
 
+  let rtpAudioCount = 0;
   engine.on('rtpAudio', (data) => {
+    rtpAudioCount++;
+    if (rtpAudioCount <= 3) {
+      console.log(`[MAIN] rtpAudio #${rtpAudioCount}: callId=${data.callId}, samples=${data.pcmData?.length}, first5=[${data.pcmData?.slice(0,5).join(',')}]`);
+    } else if (rtpAudioCount === 10) {
+      console.log(`[MAIN] rtpAudio streaming... (${rtpAudioCount} batches received)`);
+    }
     mainWindow?.webContents.send('rtp:audio', { ...data, lineId });
     if (data.callId && callRecorder.isRecording(data.callId)) {
       callRecorder.feedSpeakerData(data.callId, data.pcmData);

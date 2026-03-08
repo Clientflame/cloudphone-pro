@@ -74,8 +74,10 @@ class SipEngine extends EventEmitter {
       if (!batch.timer) {
         batch.timer = setTimeout(() => {
           if (batch.samples.length > 0) {
-            this.emit('rtpAudio', { callId, pcmData: batch.samples });
+            // IMPORTANT: Copy the array before clearing to prevent race condition
+            const toSend = batch.samples.slice();
             batch.samples = [];
+            this.emit('rtpAudio', { callId, pcmData: toSend });
           }
           batch.timer = null;
         }, BATCH_INTERVAL_MS);

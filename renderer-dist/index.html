@@ -1056,13 +1056,21 @@
     async function startAudioCapture(callId) {
       console.log('[Audio] startAudioCapture called for callId:', callId);
       try {
+        // Clean up any previous speaker playback listener
+        if (rtpAudioCleanup) {
+          try { rtpAudioCleanup(); } catch(e) {}
+          rtpAudioCleanup = null;
+        }
+
         // Close any existing AudioContext first to prevent resource leaks
         if (audioContext && audioContext.state !== 'closed') {
           console.log('[Audio] Closing existing AudioContext (state:', audioContext.state, ')');
-          try { audioContext.close(); } catch(e) {}
+          try { await audioContext.close(); } catch(e) {}
+          audioContext = null;
+          speakerGainNode = null;
         }
         audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-        console.log('[Audio] AudioContext created, state:', audioContext.state);
+        console.log('[Audio] AudioContext created, state:', audioContext.state, 'sampleRate:', audioContext.sampleRate);
         // Resume AudioContext (required by Chrome autoplay policy)
         if (audioContext.state === 'suspended') {
           console.log('[Audio] Resuming suspended AudioContext...');
@@ -1078,46 +1086,66 @@
         // Reset playback cursor
         nextPlayTime = 0;
 
-        const audioConstraints = {
-          echoCancellation: state.audioSettings.echoCancellation !== false,
-          noiseSuppression: state.audioSettings.noiseSuppression !== false,
-          autoGainControl: state.audioSettings.autoGainControl !== false,
-          sampleRate: SAMPLE_RATE
-        };
-        if (state.audioSettings.inputDevice && state.audioSettings.inputDevice !== 'default') {
-          audioConstraints.deviceId = { exact: state.audioSettings.inputDevice };
-        }
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-        const micSource = audioContext.createMediaStreamSource(micStream);
-        micProcessor = audioContext.createScriptProcessor(1024, 1, 1);
-        micProcessor.onaudioprocess = (e) => {
-          try {
-            if (state.muted || !state.activeCall) return;
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcmSamples = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-              const s = Math.max(-1, Math.min(1, inputData[i]));
-              pcmSamples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-            if (window.electronAPI?.rtp) {
-              window.electronAPI.rtp.feedMic(callId, pcmSamples);
-            }
-          } catch (micErr) {
-            console.warn('[Audio] Mic processing error:', micErr.message);
-          }
-        };
-        micSource.connect(micProcessor);
-        micProcessor.connect(audioContext.destination);
-
-        // Set up output device routing via setSinkId
-        await routeOutputDevice();
-
+        // IMPORTANT: Set up speaker playback FIRST — even if mic fails, we can still hear the remote party
         setupSpeakerPlayback();
         showRtpStats(callId);
-        console.log('[Audio] Capture started for call', callId, '- AudioContext state:', audioContext.state);
+        console.log('[Audio] Speaker playback set up successfully');
+
+        // Now try to set up microphone capture (may fail if no mic permission)
+        try {
+          const audioConstraints = {
+            echoCancellation: state.audioSettings.echoCancellation !== false,
+            noiseSuppression: state.audioSettings.noiseSuppression !== false,
+            autoGainControl: state.audioSettings.autoGainControl !== false,
+            sampleRate: SAMPLE_RATE
+          };
+          if (state.audioSettings.inputDevice && state.audioSettings.inputDevice !== 'default') {
+            audioConstraints.deviceId = { exact: state.audioSettings.inputDevice };
+          }
+          console.log('[Audio] Requesting microphone access...');
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+          console.log('[Audio] Microphone access granted');
+          const micSource = audioContext.createMediaStreamSource(micStream);
+          micProcessor = audioContext.createScriptProcessor(1024, 1, 1);
+          micProcessor.onaudioprocess = (e) => {
+            try {
+              if (state.muted || !state.activeCall) return;
+              const inputData = e.inputBuffer.getChannelData(0);
+              const pcmSamples = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) {
+                const s = Math.max(-1, Math.min(1, inputData[i]));
+                pcmSamples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+              }
+              if (window.electronAPI?.rtp) {
+                window.electronAPI.rtp.feedMic(callId, pcmSamples);
+              }
+            } catch (micErr) {
+              console.warn('[Audio] Mic processing error:', micErr.message);
+            }
+          };
+          micSource.connect(micProcessor);
+          micProcessor.connect(audioContext.destination);
+          console.log('[Audio] Mic capture started for call', callId);
+        } catch (micErr) {
+          console.warn('[Audio] Microphone access failed (call will continue without mic):', micErr.message);
+          showToast('Microphone unavailable - you can hear but not speak', 'warning');
+        }
+
+        // Set up output device routing via setSinkId
+        try {
+          await routeOutputDevice();
+        } catch(e) {
+          console.warn('[Audio] Output device routing failed:', e.message);
+        }
+
+        console.log('[Audio] Audio capture started for call', callId, '- AudioContext state:', audioContext.state);
       } catch (err) {
-        console.error('[Audio] Failed to start capture:', err);
-        showToast('Microphone access denied or unavailable', 'error');
+        console.error('[Audio] Failed to start audio engine:', err);
+        showToast('Audio engine failed: ' + err.message, 'error');
+        // Even if everything fails, try to set up speaker playback as last resort
+        try {
+          if (!rtpAudioCleanup) setupSpeakerPlayback();
+        } catch(e) {}
       }
     }
 
@@ -1143,29 +1171,69 @@
       }
     }
 
+    let audioPacketCount = 0;
     function setupSpeakerPlayback() {
-      if (!window.electronAPI?.rtp) return;
+      if (!window.electronAPI?.rtp) {
+        console.error('[Audio] electronAPI.rtp not available - cannot set up speaker playback!');
+        return;
+      }
+      audioPacketCount = 0;
+      console.log('[Audio] Setting up speaker playback listener...');
       rtpAudioCleanup = window.electronAPI.rtp.onAudio((data) => {
         try {
-          if (!audioContext || audioContext.state === 'closed') return;
+          if (!audioContext || audioContext.state === 'closed') {
+            if (audioPacketCount === 0) console.warn('[Audio] Received audio but AudioContext is', audioContext?.state || 'null');
+            return;
+          }
           if (data && data.pcmData && data.pcmData.length > 0) {
+            audioPacketCount++;
+            if (audioPacketCount <= 3) {
+              console.log(`[Audio] Received audio packet #${audioPacketCount}: ${data.pcmData.length} samples, first few values: [${data.pcmData.slice(0, 5).join(', ')}], AudioContext state: ${audioContext.state}`);
+            } else if (audioPacketCount === 10) {
+              console.log(`[Audio] Audio streaming... (${audioPacketCount} packets received so far)`);
+            }
             playPcmAudio(data.pcmData);
           }
         } catch (err) {
           console.warn('[Audio] Speaker playback error:', err.message);
         }
       });
+      console.log('[Audio] Speaker playback listener registered');
     }
 
     function playPcmAudio(pcmArray) {
-      if (!audioContext || audioContext.state !== 'running' || !speakerGainNode) return;
+      if (!audioContext || audioContext.state !== 'running') {
+        if (audioContext && audioContext.state === 'suspended') {
+          // Try to resume - user interaction may have happened
+          audioContext.resume().catch(() => {});
+        }
+        return;
+      }
+      if (!speakerGainNode) {
+        console.warn('[Audio] playPcmAudio: speakerGainNode is null, recreating...');
+        try {
+          speakerGainNode = audioContext.createGain();
+          speakerGainNode.gain.value = (state.audioSettings?.outputVolume || 80) / 100;
+          speakerGainNode.connect(audioContext.destination);
+        } catch(e) {
+          console.error('[Audio] Failed to recreate gain node:', e.message);
+          return;
+        }
+      }
       try {
         if (!pcmArray || pcmArray.length === 0) return;
 
         const float32 = new Float32Array(pcmArray.length);
+        let hasNonZero = false;
         for (let i = 0; i < pcmArray.length; i++) {
-          // pcmArray values are 16-bit signed integers (-32768 to 32767)
-          float32[i] = (pcmArray[i] || 0) / 32768.0;
+          const sample = pcmArray[i] || 0;
+          float32[i] = sample / 32768.0;
+          if (sample !== 0) hasNonZero = true;
+        }
+
+        // Log if all samples are zero (silence) for first few packets
+        if (!hasNonZero && audioPacketCount <= 5) {
+          console.warn('[Audio] Received all-zero (silence) packet #' + audioPacketCount);
         }
 
         const buffer = audioContext.createBuffer(1, float32.length, SAMPLE_RATE);
@@ -1180,7 +1248,7 @@
         const currentTime = audioContext.currentTime;
         if (nextPlayTime < currentTime) {
           // We've fallen behind — reset to slightly ahead of now
-          nextPlayTime = currentTime + 0.01;
+          nextPlayTime = currentTime + 0.05; // 50ms buffer for smoother start
         }
         source.start(nextPlayTime);
         nextPlayTime += buffer.duration;
