@@ -46,16 +46,30 @@ function createAudioWindow() {
   }
   audioWindow = new BrowserWindow({
     show: false,
-    width: 1,
-    height: 1,
+    width: 400,
+    height: 300,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
       sandbox: false,
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      webSecurity: true
     }
   });
   audioWindow.loadFile(path.join(__dirname, 'audio-capture.html'));
+  
+  // Log all console messages from the hidden window to main process stdout
+  audioWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const levelStr = ['LOG', 'WARN', 'ERROR'][level] || 'LOG';
+    console.log(`[AudioWindow:${levelStr}] ${message}`);
+    // Also write to crash log for debugging
+    try {
+      const fs = require('fs');
+      const logPath = path.join(app.getPath('userData'), 'audio-debug.log');
+      const timestamp = new Date().toISOString();
+      fs.appendFileSync(logPath, `[${timestamp}] [${levelStr}] ${message}\n`);
+    } catch(e) {}
+  });
   
   audioWindow.webContents.on('render-process-gone', (event, details) => {
     console.error('[AudioWindow] Crashed:', details.reason, details.exitCode);
@@ -1209,10 +1223,25 @@ ipcMain.handle('sip:setMute', (event, callId, muted) => {
 // ========== IPC Handlers: RTP Audio Bridge ==========
 
 // Mic data from the hidden audio capture window
+let audioMicDataCount = 0;
 ipcMain.handle('audio:micData', (event, callId, pcmSamples) => {
+  audioMicDataCount++;
+  if (audioMicDataCount <= 5) {
+    console.log(`[MAIN] audio:micData #${audioMicDataCount}: callId=${callId}, samples=${pcmSamples?.length}, type=${typeof pcmSamples}, isArray=${Array.isArray(pcmSamples)}`);
+  } else if (audioMicDataCount === 20) {
+    console.log(`[MAIN] audio:micData streaming... (${audioMicDataCount} batches received)`);
+  }
   const found = getSipEngineForCall(callId);
   if (found) {
     found.engine.feedMicData(callId, pcmSamples);
+  } else if (audioMicDataCount <= 5) {
+    console.warn(`[MAIN] audio:micData: No SIP engine found for callId=${callId}`);
+    // Debug: list all active calls
+    for (const [lineId, line] of sipLines) {
+      if (line.engine) {
+        console.log(`[MAIN]   Line ${lineId}: hasCall=${line.engine.hasCall ? line.engine.hasCall(callId) : 'no hasCall method'}`);
+      }
+    }
   }
   if (callRecorder.isRecording(callId)) {
     callRecorder.feedMicData(callId, pcmSamples);
@@ -1238,13 +1267,18 @@ ipcMain.on('audio:captureStopped', (event, data) => {
 
 // IPC from renderer to start/stop mic capture in hidden window
 ipcMain.handle('audio:startMicCapture', (event, callId, deviceId, settings) => {
-  console.log('[MAIN] Starting mic capture in hidden window for callId:', callId);
+  console.log('[MAIN] audio:startMicCapture called: callId=' + callId + ', deviceId=' + deviceId);
   if (!audioWindow || audioWindow.isDestroyed()) {
+    console.log('[MAIN] Creating new audio window...');
     createAudioWindow();
     audioWindow.webContents.once('did-finish-load', () => {
+      console.log('[MAIN] Audio window loaded, sending startCapture command');
       audioWindow.webContents.send('audio:startCapture', { callId, deviceId, settings });
     });
+    // Also open devtools for debugging (remove in production)
+    // audioWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
+    console.log('[MAIN] Audio window exists, sending startCapture command');
     audioWindow.webContents.send('audio:startCapture', { callId, deviceId, settings });
   }
   return true;
