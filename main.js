@@ -322,20 +322,20 @@ autoUpdater.logger = {
   debug: (msg) => console.log('[AutoUpdate:debug]', msg)
 };
 
-function configureUpdateFeed() {
-  const ghOwner = store.get('github.owner') || '';
-  const ghRepo = store.get('github.repo') || '';
-  const ghToken = store.get('github.token') || '';
+// ========== HARDCODED UPDATE SOURCE ==========
+// These are the official GitHub release coordinates for CloudPhone Pro.
+// Users do NOT need to configure these manually.
+const GITHUB_UPDATE_OWNER = 'Clientflame';
+const GITHUB_UPDATE_REPO = 'cloudphone-pro';
 
-  if (!ghOwner || !ghRepo) {
-    console.log('[AutoUpdate] GitHub repo not configured — updates disabled');
-    return false;
-  }
+function configureUpdateFeed() {
+  // Use hardcoded owner/repo — token can still be overridden for private repo access
+  const ghToken = store.get('github.token') || '';
 
   const feedConfig = {
     provider: 'github',
-    owner: ghOwner,
-    repo: ghRepo,
+    owner: GITHUB_UPDATE_OWNER,
+    repo: GITHUB_UPDATE_REPO,
     releaseType: 'release'
   };
 
@@ -347,7 +347,7 @@ function configureUpdateFeed() {
 
   try {
     autoUpdater.setFeedURL(feedConfig);
-    console.log(`[AutoUpdate] Feed configured: github.com/${ghOwner}/${ghRepo}`);
+    console.log(`[AutoUpdate] Feed configured: github.com/${GITHUB_UPDATE_OWNER}/${GITHUB_UPDATE_REPO}`);
     return true;
   } catch (err) {
     console.error('[AutoUpdate] Failed to set feed URL:', err.message);
@@ -618,21 +618,20 @@ ipcMain.handle('update:getVersion', () => {
   return app.getVersion();
 });
 
-// GitHub update configuration
+// GitHub update configuration — owner/repo are hardcoded, only token/channel are user-configurable
 ipcMain.handle('update:getConfig', () => {
   return {
-    owner: store.get('github.owner') || '',
-    repo: store.get('github.repo') || '',
-    token: store.get('github.token') ? '••••••••' : '', // mask token
+    owner: GITHUB_UPDATE_OWNER,
+    repo: GITHUB_UPDATE_REPO,
+    token: store.get('github.token') ? '••••••••' : '',
     hasToken: !!store.get('github.token'),
-    autoCheck: store.get('github.autoCheck') !== false, // default true
-    channel: store.get('github.channel') || 'stable' // stable or beta
+    autoCheck: store.get('github.autoCheck') !== false,
+    channel: store.get('github.channel') || 'stable'
   };
 });
 
 ipcMain.handle('update:setConfig', (event, config) => {
-  if (config.owner !== undefined) store.set('github.owner', config.owner.trim());
-  if (config.repo !== undefined) store.set('github.repo', config.repo.trim());
+  // Owner and repo are hardcoded — only token and channel are configurable
   if (config.token !== undefined && config.token !== '••••••••') {
     store.set('github.token', config.token.trim());
   }
