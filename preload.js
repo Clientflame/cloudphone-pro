@@ -139,7 +139,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getVersion: () => ipcRenderer.invoke('update:getVersion'),
     getConfig: () => ipcRenderer.invoke('update:getConfig'),
     setConfig: (config) => ipcRenderer.invoke('update:setConfig', config),
-    clearToken: () => ipcRenderer.invoke('update:clearToken'),
     onEvent: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('update:event', handler);

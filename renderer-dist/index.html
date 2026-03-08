@@ -2140,18 +2140,14 @@
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Access Token <span style="font-size:10px;color:var(--muted)">(required for private repos)</span></label>
-              <input class="form-input" id="ghToken" type="password" value="${state.ghUpdateConfig?.token || ''}" placeholder="ghp_xxxxxxxxxxxx">
-            </div>
-            <div class="form-group">
               <label class="form-label">Update Channel</label>
-              <select class="form-input form-select" id="ghChannel">
+              <select class="form-input form-select" id="ghChannel" onchange="saveGhUpdateConfig()">
                 <option value="stable" ${(state.ghUpdateConfig?.channel || 'stable') === 'stable' ? 'selected' : ''}>Stable</option>
                 <option value="beta" ${state.ghUpdateConfig?.channel === 'beta' ? 'selected' : ''}>Beta (includes pre-releases)</option>
               </select>
             </div>
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
             <span style="font-size:13px">Auto-check for updates</span>
             <label class="toggle-switch">
               <input type="checkbox" id="ghAutoCheck" ${state.ghUpdateConfig?.autoCheck !== false ? 'checked' : ''} onchange="saveGhUpdateConfig()">
@@ -2159,9 +2155,7 @@
             </label>
           </div>
           <div style="display:flex;gap:8px;margin-top:12px">
-            <button class="btn btn-primary btn-sm" onclick="saveGhUpdateConfig()"><i data-lucide="save" style="width:14px;height:14px"></i> Save Token</button>
-            <button class="btn btn-ghost btn-sm" onclick="checkForUpdates()"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Check Now</button>
-            ${state.ghUpdateConfig?.hasToken ? '<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="clearGhToken()"><i data-lucide="key" style="width:14px;height:14px"></i> Clear Token</button>' : ''}
+            <button class="btn btn-primary btn-sm" onclick="checkForUpdates()"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Check Now</button>
           </div>
         </div>
 
@@ -2883,31 +2877,17 @@
         showToast('Update configuration not available', 'warning');
         return;
       }
-      // Owner and repo are hardcoded — only token, channel, and autoCheck are user-configurable
+      // Public repo — only channel and autoCheck are configurable
       const config = {
-        token: document.getElementById('ghToken')?.value || '',
         channel: document.getElementById('ghChannel')?.value || 'stable',
         autoCheck: document.getElementById('ghAutoCheck')?.checked !== false
       };
       try {
-        const result = await api.update.setConfig(config);
-        state.ghUpdateConfig = { ...state.ghUpdateConfig, ...config, hasToken: !!config.token && config.token !== '••••••••' ? true : state.ghUpdateConfig?.hasToken };
+        await api.update.setConfig(config);
+        state.ghUpdateConfig = { ...state.ghUpdateConfig, ...config };
         showToast('Update settings saved', 'success');
-        renderPage();
       } catch (err) {
         showToast('Failed to save update config: ' + err.message, 'error');
-      }
-    }
-
-    async function clearGhToken() {
-      if (!api?.update?.clearToken) return;
-      try {
-        await api.update.clearToken();
-        state.ghUpdateConfig = { ...state.ghUpdateConfig, token: '', hasToken: false };
-        showToast('GitHub token cleared', 'info');
-        renderPage();
-      } catch (err) {
-        showToast('Failed to clear token: ' + err.message, 'error');
       }
     }
 
@@ -2917,7 +2897,7 @@
         state.ghUpdateConfig = await api.update.getConfig();
       } catch (err) {
         console.warn('[Settings] Failed to load GitHub update config:', err);
-        state.ghUpdateConfig = { owner: '', repo: '', token: '', hasToken: false, autoCheck: true, channel: 'stable' };
+        state.ghUpdateConfig = { owner: 'Clientflame', repo: 'cloudphone-pro', autoCheck: true, channel: 'stable' };
       }
     }
 

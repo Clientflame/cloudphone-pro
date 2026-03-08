@@ -329,9 +329,7 @@ const GITHUB_UPDATE_OWNER = 'Clientflame';
 const GITHUB_UPDATE_REPO = 'cloudphone-pro';
 
 function configureUpdateFeed() {
-  // Use hardcoded owner/repo — token can still be overridden for private repo access
-  const ghToken = store.get('github.token') || '';
-
+  // Public repo — no token required
   const feedConfig = {
     provider: 'github',
     owner: GITHUB_UPDATE_OWNER,
@@ -339,15 +337,9 @@ function configureUpdateFeed() {
     releaseType: 'release'
   };
 
-  // Token is only needed for private repos
-  if (ghToken) {
-    feedConfig.token = ghToken;
-    feedConfig.private = true;
-  }
-
   try {
     autoUpdater.setFeedURL(feedConfig);
-    console.log(`[AutoUpdate] Feed configured: github.com/${GITHUB_UPDATE_OWNER}/${GITHUB_UPDATE_REPO}`);
+    console.log(`[AutoUpdate] Feed configured: github.com/${GITHUB_UPDATE_OWNER}/${GITHUB_UPDATE_REPO} (public)`);
     return true;
   } catch (err) {
     console.error('[AutoUpdate] Failed to set feed URL:', err.message);
@@ -618,37 +610,24 @@ ipcMain.handle('update:getVersion', () => {
   return app.getVersion();
 });
 
-// GitHub update configuration — owner/repo are hardcoded, only token/channel are user-configurable
+// GitHub update configuration — public repo, hardcoded source
 ipcMain.handle('update:getConfig', () => {
   return {
     owner: GITHUB_UPDATE_OWNER,
     repo: GITHUB_UPDATE_REPO,
-    token: store.get('github.token') ? '••••••••' : '',
-    hasToken: !!store.get('github.token'),
     autoCheck: store.get('github.autoCheck') !== false,
     channel: store.get('github.channel') || 'stable'
   };
 });
 
 ipcMain.handle('update:setConfig', (event, config) => {
-  // Owner and repo are hardcoded — only token and channel are configurable
-  if (config.token !== undefined && config.token !== '••••••••') {
-    store.set('github.token', config.token.trim());
-  }
   if (config.autoCheck !== undefined) store.set('github.autoCheck', config.autoCheck);
   if (config.channel !== undefined) {
     store.set('github.channel', config.channel);
     autoUpdater.allowPrerelease = config.channel === 'beta';
   }
-
-  // Re-configure the feed with new settings
   const configured = configureUpdateFeed();
   return { success: configured };
-});
-
-ipcMain.handle('update:clearToken', () => {
-  store.delete('github.token');
-  return { success: true };
 });
 
 // ========== IPC Handlers: Settings Store ==========
