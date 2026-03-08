@@ -515,15 +515,23 @@ function createWindow() {
       const fs = require('fs');
       const crashLogPath = path.join(app.getPath('userData'), 'crash.log');
       const timestamp = new Date().toISOString();
-      const logEntry = `[${timestamp}] Renderer crash: reason=${details.reason} exitCode=${details.exitCode}\n`;
+      const logEntry = `[${timestamp}] Renderer crash: reason=${details.reason} exitCode=${details.exitCode} (0x${(details.exitCode >>> 0).toString(16).toUpperCase()})\n`;
       fs.appendFileSync(crashLogPath, logEntry);
       console.log('[CRASH] Crash logged to:', crashLogPath);
     } catch(logErr) {
       console.error('[CRASH] Failed to write crash log:', logErr.message);
     }
+    // Track crash count to prevent infinite crash loops
+    if (!global._crashCount) global._crashCount = 0;
+    global._crashCount++;
+    console.log('[CRASH] Crash count:', global._crashCount);
     // DO NOT hang up active calls — the SIP engine runs in the main process
     // and the call is still alive even though the renderer crashed.
     // Reload the renderer and let it reconnect to the active call.
+    if (global._crashCount > 3) {
+      console.error('[CRASH] Too many crashes (' + global._crashCount + '), not reloading to prevent loop');
+      return;
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       console.log('[CRASH] Reloading renderer (active SIP calls preserved)...');
       // Check if there are active calls we need to restore
@@ -548,8 +556,8 @@ function createWindow() {
                 for (const call of activeCalls) {
                   console.log('[CRASH] Restoring call to renderer:', call.callId);
                   mainWindow.webContents.send('sip:event', {
-                    type: 'callEstablished',
-                    data: call,
+                    type: 'callRestored',
+                    data: { ...call, skipMic: true },
                     lineId: call.lineId
                   });
                 }
@@ -1420,10 +1428,19 @@ ipcMain.handle('app:setAlwaysOnTop', (event, enabled) => {
 
 // ========== App Lifecycle ==========
 
-// Prevent renderer crashes from GPU process issues
-// The ScriptProcessor + AudioContext can trigger GPU process crashes on some systems
+// ===== CRITICAL: Prevent renderer crash (0xC0000005 Access Violation) =====
+// The getUserMedia + createMediaStreamSource + ScriptProcessor combination
+// triggers a native segfault in Chromium's audio pipeline on some Windows systems.
+// Disabling hardware acceleration forces software rendering, which avoids the
+// GPU process interaction that causes the crash.
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-gpu-compositing');
 app.commandLine.appendSwitch('disable-gpu-sandbox');
-app.commandLine.appendSwitch('disable-software-rasterizer');
+// Force ANGLE to use software rendering for WebGL
+app.commandLine.appendSwitch('use-angle', 'swiftshader');
+// Disable features that can cause audio-related crashes
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 // Reduce renderer memory pressure
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
 
