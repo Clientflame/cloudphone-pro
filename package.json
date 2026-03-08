@@ -1,6 +1,6 @@
 {
   "name": "cloudphone-pro",
-  "version": "2.5.5",
+  "version": "2.5.6",
   "description": "CloudPhone Pro - Professional VoIP Softphone for Windows",
   "main": "main.js",
   "author": "CloudPhone Pro",
@@ -76,6 +76,7 @@
       ]
     },
     "nsis": {
+      "artifactName": "CloudPhone-Pro-Setup-${version}.${ext}",
       "oneClick": true,
       "allowToChangeInstallationDirectory": false,
       "allowElevation": true,
