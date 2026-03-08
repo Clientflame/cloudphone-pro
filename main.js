@@ -315,6 +315,7 @@ autoUpdater.autoRunAppAfterInstall = true;
 autoUpdater.allowPrerelease = false;
 autoUpdater.allowDowngrade = false;
 
+
 autoUpdater.logger = {
   info: (msg) => console.log('[AutoUpdate]', msg),
   warn: (msg) => console.warn('[AutoUpdate]', msg),
