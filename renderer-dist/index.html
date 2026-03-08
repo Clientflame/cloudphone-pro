@@ -1054,11 +1054,20 @@
     const SCHEDULE_AHEAD = 0.05; // Schedule 50ms ahead to prevent gaps
 
     async function startAudioCapture(callId) {
+      console.log('[Audio] startAudioCapture called for callId:', callId);
       try {
+        // Close any existing AudioContext first to prevent resource leaks
+        if (audioContext && audioContext.state !== 'closed') {
+          console.log('[Audio] Closing existing AudioContext (state:', audioContext.state, ')');
+          try { audioContext.close(); } catch(e) {}
+        }
         audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+        console.log('[Audio] AudioContext created, state:', audioContext.state);
         // Resume AudioContext (required by Chrome autoplay policy)
         if (audioContext.state === 'suspended') {
+          console.log('[Audio] Resuming suspended AudioContext...');
           await audioContext.resume();
+          console.log('[Audio] AudioContext resumed, state:', audioContext.state);
         }
 
         // Create a persistent gain node for volume control
@@ -1265,8 +1274,10 @@
               }
               break;
             case 'callEstablished':
+              console.log('[SIP Event] callEstablished received:', JSON.stringify(event.data));
               state.activeCall = event.data;
               showActiveCall(event.data);
+              console.log('[SIP Event] callEstablished handler completed');
               break;
             case 'callEnded':
               if (state.incomingCall && !state.activeCall) {
@@ -2278,33 +2289,44 @@
     }
 
     function showActiveCall(data) {
+      console.log('[UI] showActiveCall called with data:', JSON.stringify(data));
       try {
         const overlay = document.getElementById('callOverlay');
+        console.log('[UI] callOverlay element:', overlay ? 'found' : 'NOT FOUND');
         if (overlay) overlay.classList.remove('hidden');
         const incomingOverlay = document.getElementById('incomingOverlay');
         if (incomingOverlay) incomingOverlay.classList.add('hidden');
 
-        const initial = (data.target || '?').charAt(0).toUpperCase();
+        const initial = (data?.target || '?').charAt(0).toUpperCase();
         const avatarEl = document.getElementById('callAvatar');
         if (avatarEl) avatarEl.textContent = initial;
 
         // Find contact name
-        const contact = state.contacts.find(c => c.ext === data.target);
+        const contact = state.contacts.find(c => c.ext === data?.target);
         const nameEl = document.getElementById('callTargetName');
-        if (nameEl) nameEl.textContent = contact?.name || data.target || 'Unknown';
+        if (nameEl) nameEl.textContent = contact?.name || data?.target || 'Unknown';
 
-        if (data.state === 'trying' || data.state === 'ringing') {
+        // callEstablished event data does NOT have a .state property
+        // It comes from sip-engine emit('callEstablished', {callId, target, rtpPort, remoteRtp})
+        // So data.state is always undefined, which means it always goes to the else branch
+        // This is correct - when callEstablished fires, the call IS established
+        const callState = data?.state;
+        console.log('[UI] data.state =', callState, '- will enter', (callState === 'trying' || callState === 'ringing') ? 'provisional' : 'established', 'branch');
+
+        if (callState === 'trying' || callState === 'ringing') {
           const statusEl = document.getElementById('callStatusText');
-          if (statusEl) statusEl.textContent = data.state === 'ringing' ? 'Ringing...' : 'Connecting...';
+          if (statusEl) statusEl.textContent = callState === 'ringing' ? 'Ringing...' : 'Connecting...';
           const timerEl = document.getElementById('callTimer');
           if (timerEl) timerEl.style.display = 'none';
         } else {
+          console.log('[UI] Setting up established call UI...');
           const statusEl = document.getElementById('callStatusText');
           if (statusEl) statusEl.textContent = 'In Call';
           const timerEl = document.getElementById('callTimer');
           if (timerEl) timerEl.style.display = 'block';
           startCallTimer();
-          startAudioCapture(data.callId).catch(err => {
+          console.log('[UI] Starting audio capture for callId:', data?.callId);
+          startAudioCapture(data?.callId).catch(err => {
             console.error('[Audio] startAudioCapture failed:', err);
             showToast('Audio capture failed: ' + err.message, 'error');
           });
@@ -2323,9 +2345,10 @@
             try { toggleRecording(); } catch(e) { console.warn('[Recording] Auto-record failed:', e); }
           }
         }
+        console.log('[UI] showActiveCall completed successfully');
       } catch (err) {
-        console.error('[UI] showActiveCall error:', err);
-        showToast('Error showing call UI', 'error');
+        console.error('[UI] showActiveCall error:', err.message, err.stack);
+        showToast('Error showing call UI: ' + err.message, 'error');
       }
     }
 

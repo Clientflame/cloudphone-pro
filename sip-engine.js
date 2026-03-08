@@ -629,9 +629,12 @@ class SipEngine extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       this._safeSend(request, (rs) => {
-        console.log(`[SIP] INVITE response: ${rs.status} ${rs.reason}`);
+        console.log(`[SIP] INVITE initial callback: ${rs.status} ${rs.reason} (this is the FIRST INVITE's callback)`);
         const call = this.calls.get(callId);
-        if (!call) return;
+        if (!call) {
+          console.warn(`[SIP] INVITE callback: call ${callId} not found!`);
+          return;
+        }
 
         if (rs.status === 401 || rs.status === 407) {
           // ACK the challenge
@@ -683,6 +686,7 @@ class SipEngine extends EventEmitter {
             ) || {};
 
             this._safeSend(authRequest, (rs2) => {
+              console.log(`[SIP] AUTH INVITE callback: ${rs2.status} ${rs2.reason} (this is the AUTHENTICATED INVITE's callback)`);
               this._handleInviteResponse(callId, rs2, resolve, reject);
             });
           } catch (err) {
@@ -691,68 +695,115 @@ class SipEngine extends EventEmitter {
             this.calls.delete(callId);
             reject(new Error('INVITE auth failed: ' + err.message));
           }
-        } else {
+        } else if (rs.status >= 200) {
+          // The 200 OK (or error) arrived on the first INVITE's callback
+          // This can happen if the sip library routes the response to the original transaction
+          console.log(`[SIP] INVITE initial callback got final response ${rs.status} - forwarding to handler`);
           this._handleInviteResponse(callId, rs, resolve, reject);
+        } else {
+          // 1xx provisional on the first INVITE (before auth)
+          console.log(`[SIP] INVITE initial callback got provisional ${rs.status} - ignoring (pre-auth)`);
         }
       });
     });
   }
 
   _handleInviteResponse(callId, rs, resolve, reject) {
+    console.log(`[SIP] _handleInviteResponse: callId=${callId} status=${rs.status} ${rs.reason}`);
     const call = this.calls.get(callId);
-    if (!call) return;
+    if (!call) {
+      console.warn(`[SIP] _handleInviteResponse: call ${callId} not found in calls map!`);
+      return;
+    }
 
-    if (rs.status >= 100 && rs.status < 200) {
-      call.state = rs.status === 180 ? 'ringing' : 'trying';
-      if (rs.headers.to?.params?.tag) {
-        call.toTag = rs.headers.to.params.tag;
-      }
-      this.emit('callRinging', { callId, target: call.target });
-    } else if (rs.status === 200) {
-      call.state = 'established';
-      if (rs.headers.to?.params?.tag) {
-        call.toTag = rs.headers.to.params.tag;
-      }
+    try {
+      if (rs.status >= 100 && rs.status < 200) {
+        call.state = rs.status === 180 ? 'ringing' : 'trying';
+        if (rs.headers.to?.params?.tag) {
+          call.toTag = rs.headers.to.params.tag;
+        }
+        console.log(`[SIP] Call ${callId}: ${call.state} (provisional ${rs.status})`);
+        this.emit('callRinging', { callId, target: call.target });
+        // Do NOT resolve/reject on provisional — wait for final response
+      } else if (rs.status === 200) {
+        console.log(`[SIP] Call ${callId}: 200 OK received! Setting up call...`);
+        call.state = 'established';
+        if (rs.headers.to?.params?.tag) {
+          call.toTag = rs.headers.to.params.tag;
+        }
 
-      const remoteSDP = this._parseSDP(rs.content);
-      if (remoteSDP) {
-        console.log(`[SIP] Remote RTP: ${remoteSDP.host}:${remoteSDP.port} (${remoteSDP.codec})`);
-        this.rtpManager.setRemote(callId, remoteSDP.host, remoteSDP.port);
-        this.rtpManager.startSending(callId);
-      }
+        // Send ACK FIRST — before anything else
+        // The server will drop the call if it doesn't receive ACK within ~32 seconds
+        // but some servers (FreePBX/Asterisk) are more aggressive
+        console.log(`[SIP] Call ${callId}: Sending ACK...`);
+        try {
+          const ack = {
+            method: 'ACK',
+            uri: call.targetUri,
+            headers: {
+              to: rs.headers.to,
+              from: rs.headers.from,
+              'call-id': callId,
+              cseq: { method: 'ACK', seq: rs.headers.cseq.seq },
+              via: [],
+              'max-forwards': 70,
+              contact: [{ uri: this._getContactUri() }]
+            }
+          };
+          this._safeSendNoCallback(ack);
+          console.log(`[SIP] Call ${callId}: ACK sent successfully`);
+        } catch (e) {
+          console.error('[SIP] Error sending ACK:', e.message);
+        }
 
-      // Send ACK
+        // Now set up RTP
+        const remoteSDP = this._parseSDP(rs.content);
+        if (remoteSDP) {
+          console.log(`[SIP] Call ${callId}: Remote RTP: ${remoteSDP.host}:${remoteSDP.port} (${remoteSDP.codec})`);
+          this.rtpManager.setRemote(callId, remoteSDP.host, remoteSDP.port);
+          this.rtpManager.startSending(callId);
+        } else {
+          console.warn(`[SIP] Call ${callId}: No SDP in 200 OK response!`);
+        }
+
+        console.log(`[SIP] Call ${callId}: Emitting callEstablished`);
+        this.emit('callEstablished', {
+          callId,
+          target: call.target,
+          rtpPort: call.rtpPort,
+          remoteRtp: remoteSDP
+        });
+        try { resolve(callId); } catch(e) {}
+      } else {
+        console.log(`[SIP] Call ${callId}: Failed with ${rs.status} ${rs.reason}`);
+        call.state = 'failed';
+        this.rtpManager.removeSession(callId);
+        this.calls.delete(callId);
+        this.emit('callFailed', { callId, status: rs.status, reason: rs.reason });
+        try { reject(new Error(`Call failed: ${rs.status} ${rs.reason}`)); } catch(e) {}
+      }
+    } catch (err) {
+      console.error(`[SIP] CRITICAL: _handleInviteResponse crashed for ${callId}:`, err.message, err.stack);
+      // Try to send ACK anyway to prevent server-side timeout
       try {
-        const ack = {
+        const emergencyAck = {
           method: 'ACK',
           uri: call.targetUri,
           headers: {
-            to: rs.headers.to,
-            from: rs.headers.from,
+            to: rs.headers?.to,
+            from: rs.headers?.from,
             'call-id': callId,
-            cseq: { method: 'ACK', seq: rs.headers.cseq.seq },
+            cseq: { method: 'ACK', seq: rs.headers?.cseq?.seq || 1 },
             via: [],
             'max-forwards': 70
           }
         };
-        this._safeSendNoCallback(ack);
-      } catch (e) {
-        console.warn('[SIP] Error sending ACK:', e.message);
+        this._safeSendNoCallback(emergencyAck);
+      } catch (ackErr) {
+        console.error('[SIP] Emergency ACK also failed:', ackErr.message);
       }
-
-      this.emit('callEstablished', {
-        callId,
-        target: call.target,
-        rtpPort: call.rtpPort,
-        remoteRtp: remoteSDP
-      });
-      resolve(callId);
-    } else {
-      call.state = 'failed';
-      this.rtpManager.removeSession(callId);
-      this.calls.delete(callId);
-      this.emit('callFailed', { callId, status: rs.status, reason: rs.reason });
-      reject(new Error(`Call failed: ${rs.status} ${rs.reason}`));
+      this.emit('callFailed', { callId, status: 0, reason: 'Internal error: ' + err.message });
+      try { reject(err); } catch(e) {}
     }
   }
 
