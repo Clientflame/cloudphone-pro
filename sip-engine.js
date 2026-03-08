@@ -40,6 +40,10 @@ class SipEngine extends EventEmitter {
     // Digest auth context — persisted across re-registrations
     this.digestContext = null;
 
+    // Keep-alive timer — sends OPTIONS every 30s to prevent NAT timeouts
+    this.keepAliveTimer = null;
+    this.KEEPALIVE_INTERVAL_MS = 30000;
+
     // Local network info
     this.localIP = this._getLocalIP();
     this.localPort = 0;
@@ -390,7 +394,68 @@ class SipEngine extends EventEmitter {
       this._reRegister();
     }, 90 * 1000);
 
+    // Start keep-alive OPTIONS pings to prevent NAT timeouts
+    this._startKeepAlive();
+
     if (callback) callback(true);
+  }
+
+  // ========== Keep-Alive (OPTIONS Ping) ==========
+  // Sends SIP OPTIONS to the server every 30 seconds to keep the NAT binding alive.
+  // Without this, firewalls/NATs may close the UDP mapping after 30-60s of inactivity,
+  // causing ERR_SOCKET_DGRAM_NOT_RUNNING when the server tries to send packets back.
+
+  _startKeepAlive() {
+    this._stopKeepAlive();
+    console.log(`[SIP] Starting keep-alive OPTIONS pings every ${this.KEEPALIVE_INTERVAL_MS / 1000}s`);
+    this.keepAliveTimer = setInterval(() => {
+      this._sendKeepAlive();
+    }, this.KEEPALIVE_INTERVAL_MS);
+  }
+
+  _stopKeepAlive() {
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
+  }
+
+  _sendKeepAlive() {
+    if (!this.sipStarted || !this.registered) {
+      this._stopKeepAlive();
+      return;
+    }
+
+    const serverUri = this._getServerUri();
+    const aor = this._getAOR();
+
+    const optionsRequest = {
+      method: 'OPTIONS',
+      uri: serverUri,
+      headers: {
+        to: { uri: serverUri },
+        from: { uri: aor, params: { tag: this._generateTag() } },
+        'call-id': this._generateCallId(),
+        cseq: { method: 'OPTIONS', seq: 1 },
+        via: [],
+        'max-forwards': 70,
+        'user-agent': 'CloudPhonePro/2.5',
+        accept: 'application/sdp'
+      }
+    };
+
+    this._safeSend(optionsRequest, (rs) => {
+      if (rs.status === 200 || rs.status === 405) {
+        // 200 OK or 405 Method Not Allowed are both valid — server is alive
+        // (some servers don't support OPTIONS but still respond)
+      } else if (rs.status === 503) {
+        // Transport error from _safeSend — socket is dead
+        console.warn('[SIP] Keep-alive failed: transport error, stopping pings');
+        this._stopKeepAlive();
+      } else {
+        console.warn(`[SIP] Keep-alive OPTIONS got ${rs.status} ${rs.reason}`);
+      }
+    });
   }
 
   _reRegister() {
@@ -405,6 +470,7 @@ class SipEngine extends EventEmitter {
   }
 
   async unregister() {
+    this._stopKeepAlive();
     if (this.registerTimer) {
       clearInterval(this.registerTimer);
       this.registerTimer = null;
@@ -996,6 +1062,7 @@ class SipEngine extends EventEmitter {
   }
 
   destroy() {
+    this._stopKeepAlive();
     if (this.registerTimer) {
       clearInterval(this.registerTimer);
       this.registerTimer = null;
