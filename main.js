@@ -844,7 +844,17 @@ function setupLineEvents(lineId, engine) {
     } else if (rtpAudioCount === 10) {
       console.log(`[MAIN] rtpAudio streaming... (${rtpAudioCount} batches received)`);
     }
-    mainWindow?.webContents.send('rtp:audio', { ...data, lineId });
+    // Safety: check if renderer is alive before sending IPC
+    try {
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('rtp:audio', { ...data, lineId });
+      }
+    } catch (ipcErr) {
+      // Renderer crashed or is reloading — silently skip
+      if (rtpAudioCount % 100 === 0) {
+        console.warn('[MAIN] Cannot send rtp:audio to renderer:', ipcErr.message);
+      }
+    }
     if (data.callId && callRecorder.isRecording(data.callId)) {
       callRecorder.feedSpeakerData(data.callId, data.pcmData);
     }

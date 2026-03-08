@@ -1053,9 +1053,22 @@
     const SAMPLE_RATE = 8000;
     const SCHEDULE_AHEAD = 0.08; // Schedule 80ms ahead to prevent gaps
     let audioStarted = false; // Track if audio has started playing
+    let audioCaptureLock = false; // Prevent double startAudioCapture
+    let micFeedPending = false; // Throttle mic IPC calls
 
     async function startAudioCapture(callId) {
       console.log('[Audio] startAudioCapture called for callId:', callId);
+      // Guard against double-call (answerCall + callEstablished both trigger showActiveCall)
+      if (audioCaptureLock) {
+        console.log('[Audio] startAudioCapture already in progress, skipping duplicate call');
+        return;
+      }
+      // If audio is already running for this call, skip
+      if (audioContext && audioContext.state === 'running' && rtpAudioCleanup) {
+        console.log('[Audio] Audio already running, skipping duplicate startAudioCapture');
+        return;
+      }
+      audioCaptureLock = true;
       try {
         // Clean up any previous speaker playback listener
         if (rtpAudioCleanup) {
@@ -1111,6 +1124,9 @@
           micProcessor.onaudioprocess = (e) => {
             try {
               if (state.muted || !state.activeCall) return;
+              // Throttle: skip if previous IPC call hasn't completed yet
+              // This prevents IPC backpressure from crashing the renderer
+              if (micFeedPending) return;
               const inputData = e.inputBuffer.getChannelData(0);
               const pcmSamples = new Int16Array(inputData.length);
               for (let i = 0; i < inputData.length; i++) {
@@ -1118,7 +1134,10 @@
                 pcmSamples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
               }
               if (window.electronAPI?.rtp) {
-                window.electronAPI.rtp.feedMic(callId, pcmSamples);
+                micFeedPending = true;
+                window.electronAPI.rtp.feedMic(callId, pcmSamples)
+                  .then(() => { micFeedPending = false; })
+                  .catch(() => { micFeedPending = false; });
               }
             } catch (micErr) {
               console.warn('[Audio] Mic processing error:', micErr.message);
@@ -1147,6 +1166,8 @@
         try {
           if (!rtpAudioCleanup) setupSpeakerPlayback();
         } catch(e) {}
+      } finally {
+        audioCaptureLock = false;
       }
     }
 
@@ -1310,6 +1331,8 @@
       nextPlayTime = 0;
       audioStarted = false;
       audioPacketCount = 0;
+      audioCaptureLock = false;
+      micFeedPending = false;
       const statsEl = document.getElementById('rtpStats');
       if (statsEl) statsEl.style.display = 'none';
     }
@@ -1353,8 +1376,15 @@
               break;
             case 'callEstablished':
               console.log('[SIP Event] callEstablished received:', JSON.stringify(event.data));
-              state.activeCall = event.data;
-              showActiveCall(event.data);
+              // Only set up the call UI if not already showing (answerCall already called showActiveCall)
+              if (state.activeCall && state.activeCall.callId === event.data?.callId) {
+                console.log('[SIP Event] callEstablished: call already active, updating data only');
+                // Update with full data from event but don't re-trigger audio setup
+                state.activeCall = { ...state.activeCall, ...event.data };
+              } else {
+                state.activeCall = event.data;
+                showActiveCall(event.data);
+              }
               console.log('[SIP Event] callEstablished handler completed');
               break;
             case 'callEnded':

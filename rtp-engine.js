@@ -220,12 +220,23 @@ class JitterBuffer {
    */
   _drainOne() {
     if (this.buffer.length === 0) {
-      // Buffer underrun — emit silence
-      const silence = new Int16Array(SAMPLES_PER_PACKET);
-      this.emitCallback(silence);
+      // Buffer underrun — do NOT emit silence packets
+      // The renderer's AudioContext handles gaps naturally
+      // If buffer stays empty too long, stop the drain timer to save resources
+      this._emptyCount = (this._emptyCount || 0) + 1;
+      if (this._emptyCount > 50) { // 50 * 20ms = 1 second of silence
+        console.log('[JitterBuffer] Buffer empty for 1s, stopping drain');
+        if (this.drainTimer) {
+          clearInterval(this.drainTimer);
+          this.drainTimer = null;
+        }
+        this.primed = false;
+        this._emptyCount = 0;
+      }
       return;
     }
 
+    this._emptyCount = 0;
     const entry = this.buffer.shift();
     this.lastEmittedSeq = entry.seq;
     this.emitCallback(entry.pcmSamples);
