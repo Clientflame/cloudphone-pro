@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   close: () => ipcRenderer.invoke('window:close'),
   isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
 
+  // App info
+  getCrashLog: () => ipcRenderer.invoke('app:getCrashLog'),
+  getUserDataPath: () => ipcRenderer.invoke('app:getUserDataPath'),
+
   // SIP operations (legacy single-line compatible + multi-line)
   sip: {
     register: (config) => ipcRenderer.invoke('sip:register', config),

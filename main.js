@@ -510,6 +510,17 @@ function createWindow() {
   // ===== Renderer Crash Recovery =====
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     console.error('[CRASH] Renderer process gone:', details.reason, details.exitCode);
+    // Write crash log to user-accessible location
+    try {
+      const fs = require('fs');
+      const crashLogPath = path.join(app.getPath('userData'), 'crash.log');
+      const timestamp = new Date().toISOString();
+      const logEntry = `[${timestamp}] Renderer crash: reason=${details.reason} exitCode=${details.exitCode}\n`;
+      fs.appendFileSync(crashLogPath, logEntry);
+      console.log('[CRASH] Crash logged to:', crashLogPath);
+    } catch(logErr) {
+      console.error('[CRASH] Failed to write crash log:', logErr.message);
+    }
     // DO NOT hang up active calls — the SIP engine runs in the main process
     // and the call is still alive even though the renderer crashed.
     // Reload the renderer and let it reconnect to the active call.
@@ -1024,6 +1035,24 @@ ipcMain.handle('sip:unregister', async () => {
   } catch (err) {
     return { success: false, error: err.message };
   }
+});
+
+// Crash log retrieval
+ipcMain.handle('app:getCrashLog', async () => {
+  try {
+    const fs = require('fs');
+    const crashLogPath = path.join(app.getPath('userData'), 'crash.log');
+    if (fs.existsSync(crashLogPath)) {
+      return fs.readFileSync(crashLogPath, 'utf8');
+    }
+    return 'No crash log found';
+  } catch (err) {
+    return 'Error reading crash log: ' + err.message;
+  }
+});
+
+ipcMain.handle('app:getUserDataPath', async () => {
+  return app.getPath('userData');
 });
 
 ipcMain.handle('sip:call', async (event, target, lineId) => {
