@@ -1,3 +1,50 @@
-git clone https://github.com/Clientflame/cloudphone-pro.git
-cd cloudphone-pro
-mkdir -p .github/workflows
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (no publish)
+        run: npm run pack
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify executable
+        run: |
+          if (Test-Path "dist/win-unpacked/CloudPhone Pro.exe") {
+            Write-Host "Build successful - executable found"
+          } else {
+            Write-Host "Build failed - executable not found"
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Verify auto-update config
+        run: |
+          $pkg = Get-Content package.json | ConvertFrom-Json
+          $publish = $pkg.build.publish[0]
+          Write-Host "Update provider: $($publish.provider)"
+          Write-Host "Release type: $($publish.releaseType)"
+          if ($publish.provider -ne "github") {
+            Write-Host "WARNING: publish provider is not github"
+          }
+        shell: pwsh
