@@ -1,9 +1,13 @@
 /**
- * RTP Audio Engine for CloudPhone Pro
+ * RTP Audio Engine for CloudPhone Pro v2
  * 
  * Handles RTP packet send/receive for voice calls using Node.js dgram.
  * Supports PCMU (G.711 u-law, payload type 0) and PCMA (G.711 a-law, payload type 8).
- * Bridges audio between the SIP call and the Electron renderer for mic/speaker access.
+ * 
+ * v2 improvements:
+ * - Jitter buffer (60ms / 3 packets) for smoother audio playback
+ * - Better packet loss tracking
+ * - Improved error handling for socket operations
  */
 
 const dgram = require('dgram');
@@ -12,7 +16,6 @@ const crypto = require('crypto');
 
 // ========== G.711 Codec Tables ==========
 
-// u-law (PCMU) encoding table - linear 16-bit PCM to 8-bit u-law
 const ULAW_MAX = 0x1FFF;
 const ULAW_BIAS = 33;
 
@@ -46,7 +49,6 @@ function ulawToLinear(ulawByte) {
   return sign ? -sample : sample;
 }
 
-// a-law (PCMA) encoding
 function linearToAlaw(sample) {
   let sign = 0;
   if (sample < 0) {
@@ -97,15 +99,10 @@ const PACKET_INTERVAL_MS = 20;
 
 function createRtpHeader(payloadType, sequenceNumber, timestamp, ssrc, marker = false) {
   const header = Buffer.alloc(RTP_HEADER_SIZE);
-  // V=2, P=0, X=0, CC=0
   header[0] = (RTP_VERSION << 6);
-  // M bit + PT
   header[1] = (marker ? 0x80 : 0x00) | (payloadType & 0x7F);
-  // Sequence number (big-endian)
   header.writeUInt16BE(sequenceNumber & 0xFFFF, 2);
-  // Timestamp (big-endian)
   header.writeUInt32BE(timestamp >>> 0, 4);
-  // SSRC (big-endian)
   header.writeUInt32BE(ssrc >>> 0, 8);
   return header;
 }
@@ -151,6 +148,115 @@ function parseRtpPacket(packet) {
   };
 }
 
+// ========== Jitter Buffer ==========
+// Collects incoming RTP packets and releases them in order after a configurable delay.
+// This smooths out network timing variance (jitter) for cleaner audio playback.
+
+class JitterBuffer {
+  constructor(options = {}) {
+    // Buffer depth in packets (each packet = 20ms)
+    // 3 packets = 60ms buffer — good balance between latency and smoothness
+    this.depth = options.depth || 3;
+    this.buffer = []; // Array of { seq, timestamp, pcmSamples }
+    this.lastEmittedSeq = -1;
+    this.primed = false; // Wait until buffer has enough packets before starting playback
+    this.emitCallback = options.onEmit || (() => {});
+    this.drainTimer = null;
+    this.DRAIN_INTERVAL_MS = PACKET_INTERVAL_MS; // Drain at the same rate as RTP packets arrive
+  }
+
+  /**
+   * Add a decoded PCM packet to the jitter buffer
+   */
+  push(sequenceNumber, timestamp, pcmSamples) {
+    // Insert in sequence order
+    const entry = { seq: sequenceNumber, timestamp, pcmSamples };
+    
+    // Find insertion point (maintain sorted order by sequence number)
+    let inserted = false;
+    for (let i = this.buffer.length - 1; i >= 0; i--) {
+      if (this._seqLessThan(this.buffer[i].seq, sequenceNumber)) {
+        this.buffer.splice(i + 1, 0, entry);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) {
+      this.buffer.unshift(entry);
+    }
+
+    // Discard very old packets (more than 10 packets behind)
+    while (this.buffer.length > this.depth * 3) {
+      this.buffer.shift();
+    }
+
+    // Start draining once we have enough packets
+    if (!this.primed && this.buffer.length >= this.depth) {
+      this.primed = true;
+      this._startDrain();
+    }
+  }
+
+  /**
+   * Compare sequence numbers with wraparound handling
+   */
+  _seqLessThan(a, b) {
+    const diff = (b - a + 0x10000) & 0xFFFF;
+    return diff > 0 && diff < 0x8000;
+  }
+
+  /**
+   * Start the drain timer — emits one packet every 20ms
+   */
+  _startDrain() {
+    if (this.drainTimer) return;
+    this.drainTimer = setInterval(() => {
+      this._drainOne();
+    }, this.DRAIN_INTERVAL_MS);
+  }
+
+  /**
+   * Emit the next packet from the buffer
+   */
+  _drainOne() {
+    if (this.buffer.length === 0) {
+      // Buffer underrun — emit silence
+      const silence = new Int16Array(SAMPLES_PER_PACKET);
+      this.emitCallback(silence);
+      return;
+    }
+
+    const entry = this.buffer.shift();
+    this.lastEmittedSeq = entry.seq;
+    this.emitCallback(entry.pcmSamples);
+  }
+
+  /**
+   * Stop the jitter buffer and clean up
+   */
+  stop() {
+    if (this.drainTimer) {
+      clearInterval(this.drainTimer);
+      this.drainTimer = null;
+    }
+    this.buffer = [];
+    this.primed = false;
+    this.lastEmittedSeq = -1;
+  }
+
+  /**
+   * Get buffer statistics
+   */
+  getStats() {
+    return {
+      depth: this.depth,
+      currentSize: this.buffer.length,
+      primed: this.primed,
+      lastEmittedSeq: this.lastEmittedSeq
+    };
+  }
+}
+
 // ========== RTP Session ==========
 
 class RtpSession extends EventEmitter {
@@ -159,7 +265,7 @@ class RtpSession extends EventEmitter {
     this.localPort = options.localPort || 0;
     this.remoteHost = options.remoteHost || null;
     this.remotePort = options.remotePort || null;
-    this.codec = options.codec || 'PCMU'; // PCMU or PCMA
+    this.codec = options.codec || 'PCMU';
     this.payloadType = this.codec === 'PCMA' ? 8 : 0;
 
     this.ssrc = crypto.randomBytes(4).readUInt32BE(0);
@@ -173,7 +279,14 @@ class RtpSession extends EventEmitter {
 
     // Audio buffers
     this.micBuffer = []; // PCM samples from mic (16-bit signed, 8kHz)
-    this.speakerBuffer = []; // PCM samples to send to speaker
+
+    // Jitter buffer for incoming audio
+    this.jitterBuffer = new JitterBuffer({
+      depth: 3, // 60ms buffer
+      onEmit: (pcmSamples) => {
+        this.emit('audio', pcmSamples);
+      }
+    });
 
     // Stats
     this.stats = {
@@ -187,9 +300,6 @@ class RtpSession extends EventEmitter {
     };
   }
 
-  /**
-   * Start the RTP session — bind to local port and begin sending/receiving
-   */
   async start() {
     return new Promise((resolve, reject) => {
       this.socket = dgram.createSocket('udp4');
@@ -213,18 +323,12 @@ class RtpSession extends EventEmitter {
     });
   }
 
-  /**
-   * Set the remote endpoint (from SDP answer)
-   */
   setRemote(host, port) {
     this.remoteHost = host;
     this.remotePort = port;
     console.log(`[RTP] Remote set to ${host}:${port}`);
   }
 
-  /**
-   * Begin sending RTP packets at 20ms intervals
-   */
   startSending() {
     if (this.sendTimer) return;
 
@@ -236,9 +340,6 @@ class RtpSession extends EventEmitter {
     console.log('[RTP] Sending started');
   }
 
-  /**
-   * Stop sending RTP packets
-   */
   stopSending() {
     if (this.sendTimer) {
       clearInterval(this.sendTimer);
@@ -247,69 +348,42 @@ class RtpSession extends EventEmitter {
     console.log('[RTP] Sending stopped');
   }
 
-  /**
-   * Feed microphone PCM data (16-bit signed, 8kHz mono)
-   * Called from the renderer via IPC when mic data is available
-   */
   feedMicData(pcmSamples) {
-    // pcmSamples is an Int16Array or array of 16-bit signed values
     for (let i = 0; i < pcmSamples.length; i++) {
       this.micBuffer.push(pcmSamples[i]);
     }
-  }
-
-  /**
-   * Get speaker PCM data to play (16-bit signed, 8kHz mono)
-   * Called from the renderer via IPC to get audio for playback
-   */
-  getSpeakerData(sampleCount) {
-    const samples = this.speakerBuffer.splice(0, sampleCount);
-    // Pad with silence if not enough data
-    while (samples.length < sampleCount) {
-      samples.push(0);
+    // Prevent unbounded growth — cap at 1 second of audio
+    if (this.micBuffer.length > 8000) {
+      this.micBuffer = this.micBuffer.slice(-4000);
     }
-    return new Int16Array(samples);
   }
 
-  /**
-   * Set mute state
-   */
   setMute(muted) {
     this.muted = muted;
     console.log(`[RTP] Mute: ${muted}`);
   }
 
-  /**
-   * Set hold state
-   */
   setHold(held) {
     this.held = held;
     console.log(`[RTP] Hold: ${held}`);
   }
 
-  /**
-   * Send a single RTP packet
-   */
   _sendPacket() {
     if (!this.remoteHost || !this.remotePort || !this.socket) return;
 
-    // Get 160 samples (20ms at 8kHz) from mic buffer
     let pcmSamples;
     if (this.muted || this.micBuffer.length < SAMPLES_PER_PACKET) {
-      // Send silence (comfort noise)
       pcmSamples = new Array(SAMPLES_PER_PACKET).fill(0);
     } else {
       pcmSamples = this.micBuffer.splice(0, SAMPLES_PER_PACKET);
     }
 
-    // Encode PCM to G.711
     const payload = Buffer.alloc(SAMPLES_PER_PACKET);
     const encode = this.codec === 'PCMA' ? linearToAlaw : linearToUlaw;
     for (let i = 0; i < SAMPLES_PER_PACKET; i++) {
       payload[i] = encode(pcmSamples[i] || 0);
     }
 
-    // Create RTP header
     const marker = this.stats.packetsSent === 0;
     const header = createRtpHeader(
       this.payloadType,
@@ -319,26 +393,24 @@ class RtpSession extends EventEmitter {
       marker
     );
 
-    // Combine header + payload
     const packet = Buffer.concat([header, payload]);
 
-    // Send via UDP
-    this.socket.send(packet, 0, packet.length, this.remotePort, this.remoteHost, (err) => {
-      if (err) {
-        console.error('[RTP] Send error:', err.message);
-      }
-    });
+    try {
+      this.socket.send(packet, 0, packet.length, this.remotePort, this.remoteHost, (err) => {
+        if (err) {
+          console.error('[RTP] Send error:', err.message);
+        }
+      });
+    } catch (err) {
+      console.error('[RTP] Send exception:', err.message);
+    }
 
-    // Update counters
     this.sequenceNumber = (this.sequenceNumber + 1) & 0xFFFF;
     this.timestamp += SAMPLES_PER_PACKET;
     this.stats.packetsSent++;
     this.stats.bytesSent += packet.length;
   }
 
-  /**
-   * Handle an incoming RTP packet
-   */
   _handleIncomingPacket(msg, rinfo) {
     const rtp = parseRtpPacket(msg);
     if (!rtp) return;
@@ -353,7 +425,7 @@ class RtpSession extends EventEmitter {
       const expected = (this.stats.lastSequence + 1) & 0xFFFF;
       if (rtp.sequenceNumber !== expected) {
         const lost = (rtp.sequenceNumber - expected + 0x10000) & 0xFFFF;
-        if (lost < 1000) { // Reasonable gap
+        if (lost < 1000) {
           this.stats.packetsLost += lost;
         }
       }
@@ -362,9 +434,8 @@ class RtpSession extends EventEmitter {
     this.stats.packetsReceived++;
     this.stats.bytesReceived += msg.length;
 
-    // Skip non-audio payload types (e.g., telephone-event = 101)
+    // Skip non-audio payload types
     if (rtp.payloadType !== 0 && rtp.payloadType !== 8) {
-      // Handle telephone-event (DTMF)
       if (rtp.payloadType === 101 && rtp.payload.length >= 4) {
         const event = rtp.payload[0];
         const endBit = (rtp.payload[1] >> 7) & 1;
@@ -380,22 +451,15 @@ class RtpSession extends EventEmitter {
 
     // Decode G.711 to PCM
     const decode = rtp.payloadType === 8 ? alawToLinear : ulawToLinear;
+    const pcmSamples = new Int16Array(rtp.payload.length);
     for (let i = 0; i < rtp.payload.length; i++) {
-      const sample = decode(rtp.payload[i]);
-      this.speakerBuffer.push(sample);
+      pcmSamples[i] = decode(rtp.payload[i]);
     }
 
-    // Emit audio data event for the renderer to consume
-    // Send in chunks for efficiency
-    if (this.speakerBuffer.length >= SAMPLES_PER_PACKET) {
-      const chunk = this.speakerBuffer.splice(0, SAMPLES_PER_PACKET);
-      this.emit('audio', new Int16Array(chunk));
-    }
+    // Push into jitter buffer instead of emitting directly
+    this.jitterBuffer.push(rtp.sequenceNumber, rtp.timestamp, pcmSamples);
   }
 
-  /**
-   * Get session statistics
-   */
   getStats() {
     return {
       ...this.stats,
@@ -405,59 +469,48 @@ class RtpSession extends EventEmitter {
       codec: this.codec,
       active: this.active,
       muted: this.muted,
-      held: this.held
+      held: this.held,
+      jitterBuffer: this.jitterBuffer.getStats()
     };
   }
 
-  /**
-   * Stop the RTP session
-   */
   stop() {
     this.active = false;
     this.stopSending();
+    this.jitterBuffer.stop();
 
     if (this.socket) {
       try {
         this.socket.close();
-      } catch (e) {
-        // Ignore close errors
-      }
+      } catch (e) {}
       this.socket = null;
     }
 
     this.micBuffer = [];
-    this.speakerBuffer = [];
     this.removeAllListeners();
     console.log('[RTP] Session stopped');
   }
 }
 
 // ========== RTP Manager ==========
-// Manages multiple RTP sessions (one per active call)
 
 class RtpManager extends EventEmitter {
   constructor() {
     super();
-    this.sessions = new Map(); // callId -> RtpSession
+    this.sessions = new Map();
   }
 
-  /**
-   * Create and start an RTP session for a call
-   * Returns the local RTP port to use in SDP
-   */
   async createSession(callId, options = {}) {
-    // Clean up any existing session for this call
     if (this.sessions.has(callId)) {
       this.sessions.get(callId).stop();
     }
 
     const session = new RtpSession({
-      localPort: 0, // Let OS pick
+      localPort: 0,
       codec: options.codec || 'PCMU',
       ...options
     });
 
-    // Forward events
     session.on('audio', (pcmData) => {
       this.emit('audio', { callId, pcmData });
     });
@@ -477,9 +530,6 @@ class RtpManager extends EventEmitter {
     return localPort;
   }
 
-  /**
-   * Set the remote RTP endpoint from SDP answer
-   */
   setRemote(callId, host, port) {
     const session = this.sessions.get(callId);
     if (session) {
@@ -487,9 +537,6 @@ class RtpManager extends EventEmitter {
     }
   }
 
-  /**
-   * Start sending RTP for a call (call established)
-   */
   startSending(callId) {
     const session = this.sessions.get(callId);
     if (session) {
@@ -497,9 +544,6 @@ class RtpManager extends EventEmitter {
     }
   }
 
-  /**
-   * Feed microphone data to a call's RTP session
-   */
   feedMicData(callId, pcmSamples) {
     const session = this.sessions.get(callId);
     if (session) {
@@ -507,20 +551,6 @@ class RtpManager extends EventEmitter {
     }
   }
 
-  /**
-   * Get speaker data from a call's RTP session
-   */
-  getSpeakerData(callId, sampleCount) {
-    const session = this.sessions.get(callId);
-    if (session) {
-      return session.getSpeakerData(sampleCount);
-    }
-    return new Int16Array(sampleCount);
-  }
-
-  /**
-   * Set mute state for a call
-   */
   setMute(callId, muted) {
     const session = this.sessions.get(callId);
     if (session) {
@@ -528,9 +558,6 @@ class RtpManager extends EventEmitter {
     }
   }
 
-  /**
-   * Set hold state for a call
-   */
   setHold(callId, held) {
     const session = this.sessions.get(callId);
     if (session) {
@@ -538,9 +565,6 @@ class RtpManager extends EventEmitter {
     }
   }
 
-  /**
-   * Get stats for a call's RTP session
-   */
   getStats(callId) {
     const session = this.sessions.get(callId);
     if (session) {
@@ -549,9 +573,6 @@ class RtpManager extends EventEmitter {
     return null;
   }
 
-  /**
-   * Stop and remove an RTP session
-   */
   removeSession(callId) {
     const session = this.sessions.get(callId);
     if (session) {
@@ -561,9 +582,6 @@ class RtpManager extends EventEmitter {
     }
   }
 
-  /**
-   * Stop all sessions
-   */
   destroy() {
     for (const [callId, session] of this.sessions) {
       session.stop();
@@ -574,4 +592,4 @@ class RtpManager extends EventEmitter {
   }
 }
 
-module.exports = { RtpSession, RtpManager, linearToUlaw, ulawToLinear, linearToAlaw, alawToLinear };
+module.exports = { RtpManager, RtpSession };

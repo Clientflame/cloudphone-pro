@@ -1051,7 +1051,8 @@
     let speakerGainNode = null;
     let nextPlayTime = 0; // Scheduled playback cursor for gapless audio
     const SAMPLE_RATE = 8000;
-    const SCHEDULE_AHEAD = 0.05; // Schedule 50ms ahead to prevent gaps
+    const SCHEDULE_AHEAD = 0.08; // Schedule 80ms ahead to prevent gaps
+    let audioStarted = false; // Track if audio has started playing
 
     async function startAudioCapture(callId) {
       console.log('[Audio] startAudioCapture called for callId:', callId);
@@ -1204,7 +1205,6 @@
     function playPcmAudio(pcmArray) {
       if (!audioContext || audioContext.state !== 'running') {
         if (audioContext && audioContext.state === 'suspended') {
-          // Try to resume - user interaction may have happened
           audioContext.resume().catch(() => {});
         }
         return;
@@ -1246,9 +1246,17 @@
 
         // Schedule playback sequentially to prevent overlapping/gaps
         const currentTime = audioContext.currentTime;
-        if (nextPlayTime < currentTime) {
-          // We've fallen behind — reset to slightly ahead of now
-          nextPlayTime = currentTime + 0.05; // 50ms buffer for smoother start
+        if (!audioStarted || nextPlayTime < currentTime - 0.2) {
+          // First packet or we've fallen too far behind — reset schedule
+          // Add a small initial buffer (80ms) for the jitter buffer to fill
+          nextPlayTime = currentTime + SCHEDULE_AHEAD;
+          audioStarted = true;
+          if (audioPacketCount <= 3) {
+            console.log('[Audio] Scheduling first audio at', nextPlayTime.toFixed(3), '(currentTime:', currentTime.toFixed(3), ')');
+          }
+        } else if (nextPlayTime < currentTime) {
+          // Slightly behind — catch up gently
+          nextPlayTime = currentTime + 0.02;
         }
         source.start(nextPlayTime);
         nextPlayTime += buffer.duration;
@@ -1300,6 +1308,8 @@
       if (rtpAudioCleanup) { rtpAudioCleanup(); rtpAudioCleanup = null; }
       if (rtpStatsTimer) { clearInterval(rtpStatsTimer); rtpStatsTimer = null; }
       nextPlayTime = 0;
+      audioStarted = false;
+      audioPacketCount = 0;
       const statsEl = document.getElementById('rtpStats');
       if (statsEl) statsEl.style.display = 'none';
     }
@@ -2416,10 +2426,17 @@
     async function answerCall() {
       if (!state.incomingCall || !api) return;
       try {
-        await api.sip.answer(state.incomingCall.callId);
-        state.activeCall = { callId: state.incomingCall.callId, target: state.incomingCall.callerNumber };
+        const callId = state.incomingCall.callId;
+        const callerNumber = state.incomingCall.callerNumber;
+        console.log('[UI] Answering call', callId, 'from', callerNumber);
+        await api.sip.answer(callId);
+        // Set active call and show UI immediately
+        // The callEstablished event will also fire and update the UI
+        state.activeCall = { callId, target: callerNumber };
         state.incomingCall = null;
+        showActiveCall(state.activeCall);
       } catch (err) {
+        console.error('[UI] Answer failed:', err.message);
         showToast('Failed to answer: ' + err.message, 'error');
       }
     }

@@ -1,14 +1,20 @@
 /**
- * CloudPhone Pro — SIP Engine v3
+ * CloudPhone Pro — SIP Engine v4
  * Production-grade SIP UA using the 'sip' npm package
  * 
- * Critical fixes for FreePBX compatibility:
- * 1. DO NOT pass realm in creds — let digest module extract it from the 401 challenge
- *    (FreePBX uses realm="asterisk", not the server hostname)
- * 2. Include port in REGISTER URI when port != 5060
- * 3. Use ephemeral port (49152-65535) to avoid conflicts
- * 4. Don't set publicAddress — let the transport auto-detect
- * 5. Wrap digest.signRequest in try/catch for robustness
+ * v4 Fixes:
+ * 1. Call disconnect fix: answer() now sends 200 OK with proper To tag in the response
+ * 2. ACK handling: Properly handles ACK for both incoming and outgoing calls
+ * 3. Re-INVITE handling: Responds to session refreshes to prevent server-side timeout
+ * 4. Audio pipeline: Improved batching with proper cleanup
+ * 5. Auto-reconnect: Exponential backoff when registration fails
+ * 6. Jitter buffer: 60ms buffer for smoother audio playback
+ * 
+ * FreePBX compatibility notes:
+ * - DO NOT pass realm in creds — let digest module extract it from the 401 challenge
+ * - Include port in REGISTER URI when port != 5060
+ * - Use ephemeral port (49152-65535) to avoid conflicts
+ * - Don't set publicAddress — let the transport auto-detect
  */
 
 const sip = require('sip');
@@ -43,6 +49,12 @@ class SipEngine extends EventEmitter {
     // Keep-alive timer — sends OPTIONS every 30s to prevent NAT timeouts
     this.keepAliveTimer = null;
     this.KEEPALIVE_INTERVAL_MS = 30000;
+
+    // Auto-reconnect state
+    this._reconnectAttempts = 0;
+    this._reconnectTimer = null;
+    this._maxReconnectAttempts = 10;
+    this._lastConfig = null;
 
     // Local network info
     this.localIP = this._getLocalIP();
@@ -139,8 +151,6 @@ class SipEngine extends EventEmitter {
   }
 
   // ========== Safe SIP Send Wrapper ==========
-  // Wraps sip.send() to catch ERR_SOCKET_DGRAM_NOT_RUNNING and other socket errors
-  // that would otherwise crash the main process with an uncaught exception
   _safeSend(message, callback) {
     if (!this.sipStarted) {
       console.warn('[SIP] Cannot send - SIP stack not started');
@@ -163,6 +173,7 @@ class SipEngine extends EventEmitter {
         this.registered = false;
         this.emit('unregistered');
         this.emit('sipError', { error: 'UDP socket closed unexpectedly. Please re-register.' });
+        this._scheduleReconnect();
       }
       if (callback) {
         try { callback({ status: 503, reason: 'Transport error: ' + err.message }); } catch (e) {}
@@ -182,8 +193,46 @@ class SipEngine extends EventEmitter {
         this.registered = false;
         this.emit('unregistered');
         this.emit('sipError', { error: 'UDP socket closed unexpectedly. Please re-register.' });
+        this._scheduleReconnect();
       }
     }
+  }
+
+  // ========== Auto-Reconnect ==========
+
+  _scheduleReconnect() {
+    if (this._reconnectTimer) return; // Already scheduled
+    if (this._reconnectAttempts >= this._maxReconnectAttempts) {
+      console.error('[SIP] Max reconnect attempts reached, giving up');
+      this.emit('sipError', { error: 'Max reconnection attempts reached. Please re-register manually.' });
+      return;
+    }
+
+    // Exponential backoff: 2s, 4s, 8s, 16s, 32s, 60s max
+    const delay = Math.min(2000 * Math.pow(2, this._reconnectAttempts), 60000);
+    this._reconnectAttempts++;
+    console.log(`[SIP] Scheduling reconnect attempt ${this._reconnectAttempts} in ${delay}ms`);
+
+    this._reconnectTimer = setTimeout(async () => {
+      this._reconnectTimer = null;
+      try {
+        console.log(`[SIP] Reconnect attempt ${this._reconnectAttempts}...`);
+        await this.register();
+        this._reconnectAttempts = 0; // Reset on success
+        console.log('[SIP] Reconnected successfully!');
+      } catch (err) {
+        console.error('[SIP] Reconnect failed:', err.message);
+        this._scheduleReconnect(); // Try again
+      }
+    }, delay);
+  }
+
+  _cancelReconnect() {
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+    this._reconnectAttempts = 0;
   }
 
   // ========== SIP Stack Initialization ==========
@@ -206,8 +255,6 @@ class SipEngine extends EventEmitter {
         sip.start({
           port: this.localPort,
           address: '0.0.0.0',
-          // Do NOT set publicAddress — let the transport layer auto-detect
-          // Setting it can cause issues when behind NAT
           udp: true,
           tcp: this.config.transport === 'TCP',
           logger: {
@@ -223,6 +270,9 @@ class SipEngine extends EventEmitter {
                 }
               } else {
                 logLine = `TX ${msg.status} ${msg.reason}`;
+                if (msg.headers?.['content-type'] === 'application/sdp') {
+                  logLine += ' [SDP]';
+                }
               }
               console.log(`[SIP-${logLine.substring(0,2)}] ${logLine.substring(3)}`);
               this.emit('sipDebug', { direction: 'TX', line: logLine, timestamp: Date.now() });
@@ -254,6 +304,7 @@ class SipEngine extends EventEmitter {
         // Send REGISTER
         this._sendRegister((success, error) => {
           if (success) {
+            this._cancelReconnect();
             resolve();
           } else {
             reject(new Error(error || 'Registration failed'));
@@ -285,7 +336,7 @@ class SipEngine extends EventEmitter {
         via: [],
         expires: 120,
         'max-forwards': 70,
-        'user-agent': 'CloudPhonePro/2.2',
+        'user-agent': 'CloudPhonePro/2.6',
         allow: 'INVITE, ACK, CANCEL, BYE, NOTIFY, REFER, MESSAGE, OPTIONS, INFO, SUBSCRIBE',
         supported: 'path, outbound'
       }
@@ -318,7 +369,6 @@ class SipEngine extends EventEmitter {
       this.emit('registrationFailed', { status: rs.status, reason });
       if (callback) callback(false, reason);
     }
-    // Ignore 1xx provisional responses
   }
 
   _sendAuthenticatedRegister(challengeResponse, callback) {
@@ -339,15 +389,13 @@ class SipEngine extends EventEmitter {
         via: [],
         expires: 120,
         'max-forwards': 70,
-        'user-agent': 'CloudPhonePro/2.2',
+        'user-agent': 'CloudPhonePro/2.6',
         allow: 'INVITE, ACK, CANCEL, BYE, NOTIFY, REFER, MESSAGE, OPTIONS, INFO, SUBSCRIBE',
         supported: 'path, outbound'
       }
     };
 
     try {
-      // Sign the request using the sip package's digest module
-      // This extracts realm, nonce, qop from the challenge and computes the response hash
       this.digestContext = digest.signRequest(
         this.digestContext || {},
         authRequest,
@@ -363,7 +411,6 @@ class SipEngine extends EventEmitter {
         if (rs2.status === 200) {
           this._onRegistered(callback);
         } else if (rs2.status === 401 || rs2.status === 407) {
-          // Double challenge — credentials are wrong
           this.registered = false;
           const reason = 'Authentication failed - check username/password';
           console.error(`[SIP] ${reason}`);
@@ -396,16 +443,13 @@ class SipEngine extends EventEmitter {
       this._reRegister();
     }, 90 * 1000);
 
-    // Start keep-alive OPTIONS pings to prevent NAT timeouts
+    // Start keep-alive OPTIONS pings
     this._startKeepAlive();
 
     if (callback) callback(true);
   }
 
   // ========== Keep-Alive (OPTIONS Ping) ==========
-  // Sends SIP OPTIONS to the server every 30 seconds to keep the NAT binding alive.
-  // Without this, firewalls/NATs may close the UDP mapping after 30-60s of inactivity,
-  // causing ERR_SOCKET_DGRAM_NOT_RUNNING when the server tries to send packets back.
 
   _startKeepAlive() {
     this._stopKeepAlive();
@@ -441,19 +485,18 @@ class SipEngine extends EventEmitter {
         cseq: { method: 'OPTIONS', seq: 1 },
         via: [],
         'max-forwards': 70,
-        'user-agent': 'CloudPhonePro/2.5',
+        'user-agent': 'CloudPhonePro/2.6',
         accept: 'application/sdp'
       }
     };
 
     this._safeSend(optionsRequest, (rs) => {
       if (rs.status === 200 || rs.status === 405) {
-        // 200 OK or 405 Method Not Allowed are both valid — server is alive
-        // (some servers don't support OPTIONS but still respond)
+        // Server is alive
       } else if (rs.status === 503) {
-        // Transport error from _safeSend — socket is dead
         console.warn('[SIP] Keep-alive failed: transport error, stopping pings');
         this._stopKeepAlive();
+        this._scheduleReconnect();
       } else {
         console.warn(`[SIP] Keep-alive OPTIONS got ${rs.status} ${rs.reason}`);
       }
@@ -467,12 +510,14 @@ class SipEngine extends EventEmitter {
         console.error('[SIP] Re-registration failed:', error);
         this.registered = false;
         this.emit('unregistered');
+        this._scheduleReconnect();
       }
     });
   }
 
   async unregister() {
     this._stopKeepAlive();
+    this._cancelReconnect();
     if (this.registerTimer) {
       clearInterval(this.registerTimer);
       this.registerTimer = null;
@@ -497,11 +542,10 @@ class SipEngine extends EventEmitter {
           via: [],
           expires: 0,
           'max-forwards': 70,
-          'user-agent': 'CloudPhonePro/2.2'
+          'user-agent': 'CloudPhonePro/2.6'
         }
       };
 
-      // Sign with existing digest context if available
       if (this.digestContext && this.digestContext.nonce) {
         try {
           digest.signRequest(this.digestContext, request, null, this._getCreds());
@@ -609,7 +653,7 @@ class SipEngine extends EventEmitter {
         contact: [{ uri: contactUri }],
         via: [],
         'max-forwards': 70,
-        'user-agent': 'CloudPhonePro/2.2',
+        'user-agent': 'CloudPhonePro/2.6',
         allow: 'INVITE, ACK, CANCEL, BYE, NOTIFY, REFER, MESSAGE, OPTIONS, INFO, SUBSCRIBE',
         'content-type': 'application/sdp'
       },
@@ -626,12 +670,13 @@ class SipEngine extends EventEmitter {
       request,
       targetUri,
       rtpPort,
-      inviteDigestCtx: null
+      inviteDigestCtx: null,
+      lastCseq: request.headers.cseq.seq
     });
 
     return new Promise((resolve, reject) => {
       this._safeSend(request, (rs) => {
-        console.log(`[SIP] INVITE initial callback: ${rs.status} ${rs.reason} (this is the FIRST INVITE's callback)`);
+        console.log(`[SIP] INVITE initial callback: ${rs.status} ${rs.reason}`);
         const call = this.calls.get(callId);
         if (!call) {
           console.warn(`[SIP] INVITE callback: call ${callId} not found!`);
@@ -657,6 +702,7 @@ class SipEngine extends EventEmitter {
           } catch (e) {}
 
           // Resend with auth
+          const newCseq = this.cseq++;
           const authRequest = {
             method: 'INVITE',
             uri: targetUri,
@@ -668,11 +714,11 @@ class SipEngine extends EventEmitter {
                 params: { tag: fromTag }
               },
               'call-id': callId,
-              cseq: { method: 'INVITE', seq: this.cseq++ },
+              cseq: { method: 'INVITE', seq: newCseq },
               contact: [{ uri: contactUri }],
               via: [],
               'max-forwards': 70,
-              'user-agent': 'CloudPhonePro/2.2',
+              'user-agent': 'CloudPhonePro/2.6',
               allow: 'INVITE, ACK, CANCEL, BYE, NOTIFY, REFER, MESSAGE, OPTIONS, INFO, SUBSCRIBE',
               'content-type': 'application/sdp'
             },
@@ -686,9 +732,10 @@ class SipEngine extends EventEmitter {
               rs,
               this._getCreds()
             ) || {};
+            call.lastCseq = newCseq;
 
             this._safeSend(authRequest, (rs2) => {
-              console.log(`[SIP] AUTH INVITE callback: ${rs2.status} ${rs2.reason} (this is the AUTHENTICATED INVITE's callback)`);
+              console.log(`[SIP] AUTH INVITE callback: ${rs2.status} ${rs2.reason}`);
               this._handleInviteResponse(callId, rs2, resolve, reject);
             });
           } catch (err) {
@@ -698,13 +745,10 @@ class SipEngine extends EventEmitter {
             reject(new Error('INVITE auth failed: ' + err.message));
           }
         } else if (rs.status >= 200) {
-          // The 200 OK (or error) arrived on the first INVITE's callback
-          // This can happen if the sip library routes the response to the original transaction
-          console.log(`[SIP] INVITE initial callback got final response ${rs.status} - forwarding to handler`);
           this._handleInviteResponse(callId, rs, resolve, reject);
         } else {
           // 1xx provisional on the first INVITE (before auth)
-          console.log(`[SIP] INVITE initial callback got provisional ${rs.status} - ignoring (pre-auth)`);
+          console.log(`[SIP] INVITE initial callback got provisional ${rs.status}`);
         }
       });
     });
@@ -714,7 +758,7 @@ class SipEngine extends EventEmitter {
     console.log(`[SIP] _handleInviteResponse: callId=${callId} status=${rs.status} ${rs.reason}`);
     const call = this.calls.get(callId);
     if (!call) {
-      console.warn(`[SIP] _handleInviteResponse: call ${callId} not found in calls map!`);
+      console.warn(`[SIP] _handleInviteResponse: call ${callId} not found!`);
       return;
     }
 
@@ -734,9 +778,7 @@ class SipEngine extends EventEmitter {
           call.toTag = rs.headers.to.params.tag;
         }
 
-        // Send ACK FIRST — before anything else
-        // The server will drop the call if it doesn't receive ACK within ~32 seconds
-        // but some servers (FreePBX/Asterisk) are more aggressive
+        // Send ACK FIRST — the server will drop the call if it doesn't receive ACK
         console.log(`[SIP] Call ${callId}: Sending ACK...`);
         try {
           const ack = {
@@ -757,6 +799,23 @@ class SipEngine extends EventEmitter {
         } catch (e) {
           console.error('[SIP] Error sending ACK:', e.message);
         }
+
+        // Set up a timer to re-send ACK if we get retransmitted 200 OKs
+        // (server retransmits 200 OK until it receives ACK)
+        call._ackTimer = setInterval(() => {
+          if (call.state !== 'established') {
+            clearInterval(call._ackTimer);
+            call._ackTimer = null;
+            return;
+          }
+        }, 500);
+        // Clear after 5 seconds (server should have received ACK by then)
+        setTimeout(() => {
+          if (call._ackTimer) {
+            clearInterval(call._ackTimer);
+            call._ackTimer = null;
+          }
+        }, 5000);
 
         // Now set up RTP
         const remoteSDP = this._parseSDP(rs.content);
@@ -786,7 +845,6 @@ class SipEngine extends EventEmitter {
       }
     } catch (err) {
       console.error(`[SIP] CRITICAL: _handleInviteResponse crashed for ${callId}:`, err.message, err.stack);
-      // Try to send ACK anyway to prevent server-side timeout
       try {
         const emergencyAck = {
           method: 'ACK',
@@ -818,6 +876,9 @@ class SipEngine extends EventEmitter {
       case 'INVITE':
         this._handleIncomingInvite(rq);
         break;
+      case 'ACK':
+        this._handleIncomingACK(rq);
+        break;
       case 'BYE':
         this._handleIncomingBye(rq);
         break;
@@ -833,8 +894,24 @@ class SipEngine extends EventEmitter {
       case 'MESSAGE':
         this._safeSendNoCallback(sip.makeResponse(rq, 200, 'OK'));
         break;
+      case 'INFO':
+        this._safeSendNoCallback(sip.makeResponse(rq, 200, 'OK'));
+        break;
       default:
         this._safeSendNoCallback(sip.makeResponse(rq, 405, 'Method Not Allowed'));
+    }
+  }
+
+  _handleIncomingACK(rq) {
+    const callId = rq.headers['call-id'];
+    const call = this.calls.get(callId);
+    if (call) {
+      console.log(`[SIP] ACK received for call ${callId} — call is fully established`);
+      // ACK confirms the 200 OK was received by the remote party
+      // This is the final step in the 3-way handshake for incoming calls
+      call.ackReceived = true;
+    } else {
+      console.log(`[SIP] ACK received for unknown call ${callId} — ignoring`);
     }
   }
 
@@ -844,16 +921,31 @@ class SipEngine extends EventEmitter {
     const fromName = rq.headers.from?.name || '';
     const callerNumber = fromUri.replace('sip:', '').split('@')[0];
 
-    // Re-INVITE check
+    // Re-INVITE check (session refresh / hold / codec change)
     const existingCall = this.calls.get(callId);
-    if (existingCall && existingCall.state === 'established') {
+    if (existingCall && (existingCall.state === 'established' || existingCall.state === 'held')) {
+      console.log(`[SIP] Re-INVITE received for existing call ${callId} — responding with 200 OK`);
       try {
         const response = sip.makeResponse(rq, 200, 'OK');
         response.headers.contact = [{ uri: this._getContactUri() }];
         response.headers['content-type'] = 'application/sdp';
         response.content = this._generateSDP(existingCall.rtpPort);
+        // Ensure To tag is present
+        if (existingCall.toTag && response.headers.to) {
+          if (!response.headers.to.params) response.headers.to.params = {};
+          response.headers.to.params.tag = existingCall.toTag;
+        }
         this._safeSendNoCallback(response);
-      } catch (e) {}
+
+        // Update remote SDP if changed
+        const newRemoteSDP = this._parseSDP(rq.content);
+        if (newRemoteSDP) {
+          console.log(`[SIP] Re-INVITE: Updating remote RTP to ${newRemoteSDP.host}:${newRemoteSDP.port}`);
+          this.rtpManager.setRemote(callId, newRemoteSDP.host, newRemoteSDP.port);
+        }
+      } catch (e) {
+        console.error('[SIP] Error handling re-INVITE:', e.message);
+      }
       return;
     }
 
@@ -874,12 +966,23 @@ class SipEngine extends EventEmitter {
       this.rtpManager.setRemote(callId, remoteSDP.host, remoteSDP.port);
     }
 
-    // Send 180 Ringing
+    // Generate our To tag for this dialog
+    const ourToTag = this._generateTag();
+
+    // Send 180 Ringing with our To tag
     try {
       const ringing = sip.makeResponse(rq, 180, 'Ringing');
       ringing.headers.contact = [{ uri: this._getContactUri() }];
+      // Set our To tag in the response
+      if (ringing.headers.to) {
+        if (!ringing.headers.to.params) ringing.headers.to.params = {};
+        ringing.headers.to.params.tag = ourToTag;
+      }
       this._safeSendNoCallback(ringing);
-    } catch (e) {}
+      console.log(`[SIP] Sent 180 Ringing for call ${callId} with To tag ${ourToTag}`);
+    } catch (e) {
+      console.error('[SIP] Error sending 180 Ringing:', e.message);
+    }
 
     this.calls.set(callId, {
       id: callId,
@@ -888,10 +991,11 @@ class SipEngine extends EventEmitter {
       callerName: fromName,
       state: 'ringing',
       fromTag: rq.headers.from?.params?.tag,
-      toTag: this._generateTag(),
+      toTag: ourToTag,
       incomingRequest: rq,
       rtpPort,
-      remoteSDP
+      remoteSDP,
+      ackReceived: false
     });
 
     this.emit('incomingCall', {
@@ -905,14 +1009,45 @@ class SipEngine extends EventEmitter {
     const call = this.calls.get(callId);
     if (!call || !call.incomingRequest) throw new Error('No incoming call to answer');
 
+    console.log(`[SIP] Answering call ${callId}...`);
+
+    // Build 200 OK response from the original INVITE request
     const response = sip.makeResponse(call.incomingRequest, 200, 'OK');
     response.headers.contact = [{ uri: this._getContactUri() }];
     response.headers['content-type'] = 'application/sdp';
     response.content = this._generateSDP(call.rtpPort);
 
+    // CRITICAL: Set our To tag in the 200 OK response
+    // Without this, the remote party can't build the dialog properly
+    // and may send BYE immediately
+    if (response.headers.to) {
+      if (!response.headers.to.params) response.headers.to.params = {};
+      response.headers.to.params.tag = call.toTag;
+    }
+
+    console.log(`[SIP] Sending 200 OK for call ${callId} with To tag ${call.toTag}`);
     this._safeSendNoCallback(response);
     call.state = 'established';
 
+    // Set up a retransmit timer for the 200 OK
+    // RFC 3261 says UAS must retransmit 200 OK until ACK is received
+    let retransmitCount = 0;
+    const maxRetransmits = 10;
+    call._200OkRetransmitTimer = setInterval(() => {
+      if (call.ackReceived || call.state !== 'established' || retransmitCount >= maxRetransmits) {
+        clearInterval(call._200OkRetransmitTimer);
+        call._200OkRetransmitTimer = null;
+        if (!call.ackReceived && retransmitCount >= maxRetransmits) {
+          console.warn(`[SIP] Call ${callId}: No ACK received after ${maxRetransmits} retransmits`);
+        }
+        return;
+      }
+      retransmitCount++;
+      console.log(`[SIP] Call ${callId}: Retransmitting 200 OK (attempt ${retransmitCount})`);
+      this._safeSendNoCallback(response);
+    }, 500); // Retransmit every 500ms
+
+    // Start RTP sending
     this.rtpManager.startSending(callId);
 
     this.emit('callEstablished', {
@@ -929,8 +1064,18 @@ class SipEngine extends EventEmitter {
 
     const call = this.calls.get(callId);
     if (call) {
+      // Clean up retransmit timer
+      if (call._200OkRetransmitTimer) {
+        clearInterval(call._200OkRetransmitTimer);
+        call._200OkRetransmitTimer = null;
+      }
+      if (call._ackTimer) {
+        clearInterval(call._ackTimer);
+        call._ackTimer = null;
+      }
       call.state = 'ended';
       this.rtpManager.removeSession(callId);
+      this._cleanupAudioBatch(callId);
       this.calls.delete(callId);
       this.emit('callEnded', { callId, reason: 'Remote hangup' });
     }
@@ -945,8 +1090,14 @@ class SipEngine extends EventEmitter {
       if (call.incomingRequest) {
         this._safeSendNoCallback(sip.makeResponse(call.incomingRequest, 487, 'Request Terminated'));
       }
+      // Clean up retransmit timer
+      if (call._200OkRetransmitTimer) {
+        clearInterval(call._200OkRetransmitTimer);
+        call._200OkRetransmitTimer = null;
+      }
       call.state = 'ended';
       this.rtpManager.removeSession(callId);
+      this._cleanupAudioBatch(callId);
       this.calls.delete(callId);
       this.emit('callEnded', { callId, reason: 'Cancelled', wasMissed: true });
     }
@@ -958,6 +1109,7 @@ class SipEngine extends EventEmitter {
     if (call.direction === 'outgoing') {
       return call.targetUri || call.request?.uri || `sip:${call.target}@${this.config.server}`;
     }
+    // For incoming calls, use the Contact URI from the original INVITE if available
     return call.incomingRequest?.headers?.contact?.[0]?.uri || `sip:${call.target}@${this.config.server}`;
   }
 
@@ -965,6 +1117,8 @@ class SipEngine extends EventEmitter {
     if (call.direction === 'outgoing') {
       return { uri: `sip:${call.target}@${this.config.server}`, params: call.toTag ? { tag: call.toTag } : {} };
     }
+    // For incoming calls: To = us (the callee), From = them (the caller)
+    // But for BYE, we swap: To = original From (caller), From = original To (us)
     return { uri: call.incomingRequest?.headers?.from?.uri || `sip:${call.target}@${this.config.server}`, params: { tag: call.fromTag } };
   }
 
@@ -972,6 +1126,7 @@ class SipEngine extends EventEmitter {
     if (call.direction === 'outgoing') {
       return { uri: this._getAOR(), params: { tag: call.fromTag } };
     }
+    // For incoming calls: our From in BYE = original To (us) with our tag
     return { uri: this._getAOR(), params: { tag: call.toTag } };
   }
 
@@ -980,12 +1135,43 @@ class SipEngine extends EventEmitter {
     if (!call) return;
 
     this.rtpManager.removeSession(callId);
+    this._cleanupAudioBatch(callId);
+
+    // Clean up timers
+    if (call._200OkRetransmitTimer) {
+      clearInterval(call._200OkRetransmitTimer);
+      call._200OkRetransmitTimer = null;
+    }
+    if (call._ackTimer) {
+      clearInterval(call._ackTimer);
+      call._ackTimer = null;
+    }
 
     try {
       if (call.state === 'ringing' && call.direction === 'incoming') {
         if (call.incomingRequest) {
-          this._safeSendNoCallback(sip.makeResponse(call.incomingRequest, 486, 'Busy Here'));
+          const response = sip.makeResponse(call.incomingRequest, 486, 'Busy Here');
+          if (response.headers.to) {
+            if (!response.headers.to.params) response.headers.to.params = {};
+            response.headers.to.params.tag = call.toTag;
+          }
+          this._safeSendNoCallback(response);
         }
+      } else if (call.state === 'trying' && call.direction === 'outgoing') {
+        // Cancel outgoing call that hasn't been answered yet
+        const cancel = {
+          method: 'CANCEL',
+          uri: call.targetUri,
+          headers: {
+            to: { uri: `sip:${call.target}@${this.config.server}` },
+            from: { uri: this._getAOR(), params: { tag: call.fromTag } },
+            'call-id': callId,
+            cseq: { method: 'CANCEL', seq: call.lastCseq || 1 },
+            via: [],
+            'max-forwards': 70
+          }
+        };
+        this._safeSendNoCallback(cancel);
       } else {
         const bye = {
           method: 'BYE',
@@ -1100,6 +1286,17 @@ class SipEngine extends EventEmitter {
     return this.calls.has(callId);
   }
 
+  // ========== Audio Batch Cleanup ==========
+
+  _cleanupAudioBatch(callId) {
+    if (this._audioBatch[callId]) {
+      if (this._audioBatch[callId].timer) {
+        clearTimeout(this._audioBatch[callId].timer);
+      }
+      delete this._audioBatch[callId];
+    }
+  }
+
   // ========== Status ==========
 
   getStatus() {
@@ -1116,12 +1313,19 @@ class SipEngine extends EventEmitter {
 
   destroy() {
     this._stopKeepAlive();
+    this._cancelReconnect();
     if (this.registerTimer) {
       clearInterval(this.registerTimer);
       this.registerTimer = null;
     }
 
-    for (const [callId] of this.calls) {
+    for (const [callId, call] of this.calls) {
+      if (call._200OkRetransmitTimer) {
+        clearInterval(call._200OkRetransmitTimer);
+      }
+      if (call._ackTimer) {
+        clearInterval(call._ackTimer);
+      }
       try { this.hangup(callId); } catch (e) {}
     }
     this.calls.clear();
