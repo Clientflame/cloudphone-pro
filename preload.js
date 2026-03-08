@@ -12,23 +12,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCrashLog: () => ipcRenderer.invoke('app:getCrashLog'),
   getUserDataPath: () => ipcRenderer.invoke('app:getUserDataPath'),
 
-  // Audio capture (runs in hidden window, not in this renderer)
-  audio: {
-    startMicCapture: (callId, deviceId, settings) => ipcRenderer.invoke('audio:startMicCapture', callId, deviceId, settings),
-    stopMicCapture: () => ipcRenderer.invoke('audio:stopMicCapture'),
-    setMicMuted: (muted) => ipcRenderer.invoke('audio:setMicMuted', muted),
-    onMicStatus: (callback) => {
-      const handler = (event, data) => callback(data);
-      ipcRenderer.on('audio:micStatus', handler);
-      return () => ipcRenderer.removeListener('audio:micStatus', handler);
-    },
-    onMicUnavailable: (callback) => {
-      const handler = (event, data) => callback(data);
-      ipcRenderer.on('audio:micUnavailable', handler);
-      return () => ipcRenderer.removeListener('audio:micUnavailable', handler);
-    }
-  },
-
   // SIP operations (legacy single-line compatible + multi-line)
   sip: {
     register: (config) => ipcRenderer.invoke('sip:register', config),
@@ -101,13 +84,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getDir: () => ipcRenderer.invoke('recording:getDir')
   },
 
-  // Audio device settings
+  // Audio device settings + mic capture (mic runs in hidden window)
   audio: {
     getSettings: () => ipcRenderer.invoke('audio:getSettings'),
     saveSettings: (settings) => ipcRenderer.invoke('audio:setSettings', settings),
     setSettings: (settings) => ipcRenderer.invoke('audio:setSettings', settings),
     getRecordCallsSetting: () => ipcRenderer.invoke('audio:getRecordCallsSetting'),
-    setRecordCallsSetting: (enabled) => ipcRenderer.invoke('audio:setRecordCallsSetting', enabled)
+    setRecordCallsSetting: (enabled) => ipcRenderer.invoke('audio:setRecordCallsSetting', enabled),
+    // Mic capture (runs in hidden BrowserWindow, not in this renderer)
+    startMicCapture: (callId, deviceId, settings) => ipcRenderer.invoke('audio:startMicCapture', callId, deviceId, settings),
+    stopMicCapture: () => ipcRenderer.invoke('audio:stopMicCapture'),
+    setMicMuted: (muted) => ipcRenderer.invoke('audio:setMicMuted', muted),
+    onMicStatus: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('audio:micStatus', handler);
+      return () => ipcRenderer.removeListener('audio:micStatus', handler);
+    },
+    onMicUnavailable: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('audio:micUnavailable', handler);
+      return () => ipcRenderer.removeListener('audio:micUnavailable', handler);
+    }
   },
 
   // Call Queue Agent operations
